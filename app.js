@@ -472,6 +472,12 @@ function animateBoardMove(move, prepared) {
   const destination = boardSquare(move.to);
   origin?.classList.add("move-origin-pulse");
   destination?.classList.add("move-destination-pulse");
+  if (move.flags.includes("k") || move.flags.includes("q")) {
+    const rank = move.color === "w" ? "1" : "8";
+    const kingSide = move.flags.includes("k");
+    boardSquare((kingSide ? "h" : "a") + rank)?.classList.add("move-origin-pulse");
+    boardSquare((kingSide ? "f" : "d") + rank)?.classList.add("move-destination-pulse");
+  }
 
   if (move.captured) {
     const captureSquare = move.flags.includes("e")
@@ -962,6 +968,7 @@ $("flip-button").addEventListener("click", () => {
   flipped = !flipped;
   persist();
   renderBoard();
+  if (!result) startComputerTurn();
 });
 
 $("fen-button").addEventListener("click", async () => {
