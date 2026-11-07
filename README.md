@@ -1,57 +1,54 @@
 # Masters of Chess ♟
 
-Een moderne schaakapp om **met twee personen op één apparaat** te spelen. De app is mobielvriendelijk en kan direct als statische website via GitHub Pages draaien.
+Een moderne schaakapp voor **twee spelers op één apparaat** of **tegen de computer**. Draait in de browser op mobiel en desktop, zonder account.
 
 ## Functies
 
-- Interactief 8×8-schaakbord met legale zetten, schaakmat, pat, rokade, en passant en promotie.
-- Schaakregels via [chess.js](https://github.com/jhlywa/chess.js).
-- Bedenktijd: 3+2, 5+0, 10+5, 15+10, 30+0 en zonder klok.
-- Automatische secondenincrement, starten/pauzeren en tijdsoverschrijding.
-- Remise in overleg, claimen bij driemaal herhaling of na 50 zetten.
-- Automatische remise bij vijfmaal herhaling, 75 zetten en onvoldoende materiaal.
-- Zetgeschiedenis, zet terugnemen, opgeven, bord draaien, FEN kopiëren en PGN exporteren.
-- Lokale opslag: na herladen wordt de partij hersteld met **gepauzeerde klok**.
+- Volledig 8×8-schaakbord met legale zetten, schaakmat, pat, rokade, en passant en pionpromotie via [chess.js](https://github.com/jhlywa/chess.js).
+- **Computertegenstander: Stockfish 19 Lite (single-threaded)**, vier instelbare moeilijkheidsniveaus: beginner, recreatief, gevorderd en expert.
+- Zelf kiezen met wit of zwart; het bord draait automatisch mee voor zwart.
+- Bestaande lokale modus voor twee spelers blijft werken.
+- Bedenktijd: 3+2, 5+0, 10+5, 15+10, 30+0 of onbeperkt.
+- Zetgeschiedenis, terugnemen (tegen de computer meestal een volledige beurt), opgeven, FEN kopiëren en PGN exporteren.
+- Lokale opslag: partij en instellingen worden opgeslagen en na herladen **gepauzeerd** hersteld.
+- Bij uitval van de Stockfish-engine speelt een eenvoudige reservecomputer verder; de app vermeldt dit duidelijk.
 
-## Starten
+## GitHub Pages
 
-De app is opgebouwd uit gewone HTML, CSS en JavaScript. Er is geen buildstap nodig.
+De publicatieworkflow onder .github/workflows/deploy.yml installeert het npm-pakket `stockfish@19.0.1`, kopieert de ongewijzigde **lite single-threaded** JavaScript- en WASM-bestanden naar de website en publiceert de statische bestanden. Dit is bewust de single-threaded variant, zodat GitHub Pages geen speciale cross-origin-isolationheaders nodig heeft.
 
-1. Open de repository via GitHub Pages; of
-2. Start in de lokale repository een HTTP-server:
+Website: **https://barloss94.github.io/mastersoffchess/**
+
+## Lokaal ontwikkelen
 
 ~~~bash
+npm install
 python -m http.server 8000
 ~~~
 
-Open vervolgens http://localhost:8000 in je browser.
+Open http://localhost:8000. `npm install` voert automatisch `scripts/prepare-engine.mjs` uit en zet de Stockfish-werknemer plus WASM in `engine/`. Die gegenereerde bestanden staan in .gitignore.
 
-De browser laadt chess.js@1.4.0 als ECMAScript-module vanaf jsDelivr. Hiervoor is een internetverbinding nodig. Open de site via HTTP(S), niet als file://-bestand.
+De browser laadt chess.js 1.4.0 vanaf jsDelivr. Hiervoor is internet nodig. Stockfish draait lokaal in een Web Worker; er worden geen zetten naar een externe schaakserver verstuurd.
 
-## Publiceren via GitHub Pages
+## Tests
 
-De workflow in .github/workflows/deploy.yml publiceert de website bij iedere push naar main.
+~~~bash
+npm install
+npm test
+~~~
 
-In een nieuwe repository moet GitHub Pages mogelijk nog eenmalig worden geactiveerd:
+De tests controleren onder meer schaakmat, rokade, bijzondere zetten, opslag/herladen en computermodus.
 
-1. Open **Settings → Pages** op GitHub.
-2. Kies bij **Build and deployment → Source** voor **GitHub Actions**.
-3. Controleer de workflow **Deploy Masters of Chess** onder **Actions**.
+## Bedenktijd en spelgedrag
 
-Beoogde website: https://barloss94.github.io/mastersoffchess/
+- Start bij voorkeur de klok vóór de eerste zet. Anders begint deze automatisch **na de eerste zet**.
+- De computer doet zelfstandig zijn zet zodra hij aan de beurt is, óók als je zwart kiest.
+- In de computermodus doet **Zet terug** ook de voorafgaande computerzet ongedaan, zodat je een andere zet kunt proberen.
+- Het opgeven van een partij tegen de computer betekent altijd dat **jij** opgeeft, ook wanneer de computer nadenkt.
+- Remise onderling afspreken is alleen in de lokale modus mogelijk. Reglementair remise claimen kan wel in de computermodus.
+- De klok wordt na herladen van de pagina altijd gepauzeerd.
 
-## Spelgedrag
+## Licenties en herkomst
 
-- Kies een stuk en vervolgens een gemarkeerd doelveld.
-- Start bij voorkeur de klok vóór de eerste zet. Anders begint de klok automatisch **na de eerste zet**, zonder de voorafgaande bedenktijd van wit af te trekken.
-- Bij pionpromotie kun je een dame, toren, loper of paard kiezen.
-- **Zet terug** herstelt de klok van het moment van de teruggenomen zet en pauzeert de klok.
-- Een herladen partij wordt altijd gepauzeerd hervat.
-
-## Technologie en uitbreidingen
-
-Dit is bewust een **frontend-only versie**: geen accounts, online multiplayer of database. De gebruikersinterface gebruikt gewone JavaScript zonder buildstap, met chess.js als spelregelbibliotheek. Een volgende fase kan worden uitgebreid met React, Supabase, online partijen en server-side zetvalidatie.
-
-## Dependencylicentie
-
-[chess.js](https://github.com/jhlywa/chess.js) is beschikbaar onder de BSD-2-Clause-licentie en wordt extern geladen.
+- Schaakregels: [chess.js](https://github.com/jhlywa/chess.js), BSD-2-Clause.
+- Schaakengine: [Stockfish.js van nmrugg](https://github.com/nmrugg/stockfish.js), versie 19.0.1 van het npm-pakket [stockfish](https://www.npmjs.com/package/stockfish), onder **GNU GPLv3**. De ongewijzigde enginebestanden worden bij de Pages-build apart gedistribueerd. Broncode en licentiebepalingen van Stockfish zijn beschikbaar via de genoemde upstreamrepository. De engine wordt gebruikt via het UCI-protocol in een aparte Web Worker.
