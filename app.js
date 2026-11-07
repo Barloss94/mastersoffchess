@@ -14,6 +14,93 @@ const $ = (id) => document.getElementById(id);
 const opposite = (color) => color === "w" ? "b" : "w";
 const colorName = (color) => color === "w" ? "Wit" : "Zwart";
 
+const COMPUTER_LEVELS = {
+  beginner: { skill: 0, depth: 2, time: 180 },
+  easy: { skill: 3, depth: 5, time: 300 },
+  medium: { skill: 10, depth: 10, time: 700 },
+  hard: { skill: 18, depth: 16, time: 1500 }
+};
+
+/**
+ * Runs Stockfish as a same-origin classic Web Worker. The build is installed
+ * as a static asset during deployment (no cross-origin isolation required).
+ * Only the currently outstanding position may receive a bestmove response.
+ */
+class StockfishOpponent {
+  constructor(onMove, onFailure) {
+    this.onMove = onMove;
+    this.onFailure = onFailure;
+    this.worker = null;
+    this.ready = false;
+    this.job = null;
+    this.bootTimer = null;
+  }
+
+  ask(fen, level) {
+    this.job = { fen, level };
+    if (this.ready) {
+      this.search();
+      return;
+    }
+    if (this.worker) return;
+    this.worker = new Worker("./engine/stockfish-19-lite-single.js");
+    this.worker.onmessage = (event) => {
+      for (const line of String(event.data ?? "").split(/\r?\n/)) {
+        const message = line.trim();
+        if (message === "readyok") {
+          this.ready = true;
+          window.clearTimeout(this.bootTimer);
+          if (this.job) this.search();
+        } else if (message.startsWith("bestmove ")) {
+          const job = this.job;
+          this.job = null;
+          if (!job) continue;
+          const uci = message.split(/\s+/)[1];
+          if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci || "")) {
+            this.fail();
+            return;
+          }
+          this.onMove({
+            from: uci.slice(0, 2),
+            to: uci.slice(2, 4),
+            ...(uci.length === 5 ? { promotion: uci[4] } : {})
+          }, job.fen);
+        }
+      }
+    };
+    this.worker.onerror = (event) => {
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      this.fail();
+    };
+    this.worker.postMessage("uci");
+    this.worker.postMessage("isready");
+    this.bootTimer = window.setTimeout(() => this.fail(), 20000);
+  }
+
+  search() {
+    if (!this.worker || !this.job) return;
+    const setting = COMPUTER_LEVELS[this.job.level] || COMPUTER_LEVELS.medium;
+    this.worker.postMessage("setoption name Skill Level value " + setting.skill);
+    this.worker.postMessage("position fen " + this.job.fen);
+    this.worker.postMessage("go depth " + setting.depth + " movetime " + setting.time);
+  }
+
+  fail() {
+    const job = this.job;
+    this.dispose();
+    if (job) this.onFailure(job.fen);
+  }
+
+  dispose() {
+    window.clearTimeout(this.bootTimer);
+    if (this.worker) this.worker.terminate();
+    this.worker = null;
+    this.ready = false;
+    this.job = null;
+  }
+}
+
+
 let game = new Chess();
 let selected = null;
 let pendingPromotion = null;
@@ -29,6 +116,92 @@ let result = null;
 let moveClocks = [];
 let positionKeys = [];
 let toastTimer = 0;
+let gameMode = $("game-mode").value;
+let playerColor = $("player-color").value;
+let computerLevel = $("computer-level").value;
+let computer = null;
+let computerThinking = false;
+let computerToken = 0;
+let engineUnavailable = false;
+
+function isComputerTurn() {
+  return gameMode === "computer" && game.turn() !== playerColor && !result;
+}
+
+function cancelComputer() {
+  computerToken++;
+  computerThinking = false;
+  if (computer) computer.dispose();
+  computer = null;
+}
+
+function fallbackMove() {
+  const candidates = game.moves({ verbose: true });
+  if (!candidates.length) return null;
+  if (computerLevel === "beginner") return candidates[Math.floor(Math.random() * candidates.length)];
+  const values = { p: 100, n: 315, b: 335, r: 500, q: 900, k: 0 };
+  const scored = candidates.map((move) => {
+    let value = move.captured ? (values[move.captured] || 0) : 0;
+    if (move.promotion) value += values[move.promotion] || 0;
+    game.move(move);
+    if (game.isCheckmate()) value += 100000;
+    else if (game.isCheck()) value += 35;
+    // The reserve engine avoids a move if an immediate recapture is possible.
+    const replies = game.moves({ verbose: true });
+    let biggestRecapture = 0;
+    for (const reply of replies) {
+      if (reply.to === move.to && reply.captured) {
+        biggestRecapture = Math.max(biggestRecapture, values[reply.captured] || 0);
+      }
+    }
+    value -= biggestRecapture * 0.65;
+    game.undo();
+    value += (Math.random() - 0.5) * (computerLevel === "easy" ? 150 : 35);
+    return { move, value };
+  });
+  scored.sort((a, b) => b.value - a.value);
+  if (computerLevel === "easy") return scored[Math.floor(Math.random() * Math.min(3, scored.length))].move;
+  return scored[0].move;
+}
+
+function startComputerTurn() {
+  if (!isComputerTurn() || computerThinking) return;
+  computerThinking = true;
+  const token = ++computerToken;
+  const fen = game.fen();
+  renderStatus();
+  renderClocks();
+
+  const accept = (move, expectedFen) => {
+    if (token !== computerToken || game.fen() !== expectedFen || !isComputerTurn()) return;
+    computerThinking = false;
+    playMove(move.from, move.to, move.promotion, "computer");
+  };
+  const useFallback = (expectedFen) => {
+    if (token !== computerToken || game.fen() !== expectedFen || !isComputerTurn()) return;
+    if (computer) computer.dispose();
+    computer = null;
+    engineUnavailable = true;
+    $("computer-help").textContent = "Stockfish is niet beschikbaar. De eenvoudige reservecomputer speelt verder.";
+    $("computer-help").classList.add("is-error");
+    window.setTimeout(() => {
+      if (token !== computerToken || game.fen() !== fen || !isComputerTurn()) return;
+      const move = fallbackMove();
+      if (move) accept(move, fen);
+    }, 300);
+  };
+  if (engineUnavailable) {
+    useFallback(fen);
+    return;
+  }
+  try {
+    if (!computer) computer = new StockfishOpponent(accept, useFallback);
+    computer.ask(fen, computerLevel);
+  } catch {
+    useFallback(fen);
+  }
+}
+
 
 function parseControl(value) {
   if (value === "unlimited") return { initial: 0, increment: 0 };
@@ -84,6 +257,7 @@ function canEverMate(color) {
 function finish(text, score) {
   result = { text, score };
   running = false;
+  cancelComputer();
   game.header("Result", score);
 }
 
@@ -189,7 +363,7 @@ function renderBoard() {
 }
 
 function chooseSquare(square) {
-  if (result || pendingPromotion) return;
+  if (result || pendingPromotion || isComputerTurn()) return;
   const piece = game.get(square);
 
   if (selected === square) {
@@ -238,8 +412,9 @@ function openPromotion(from, to) {
   $("promotion-dialog").showModal();
 }
 
-function playMove(from, to, promotion) {
+function playMove(from, to, promotion, source = "human") {
   if (result) return;
+  if (gameMode === "computer" && ((source === "computer") !== (game.turn() !== playerColor))) return;
   const legal = game.moves({ square: from, verbose: true }).some(
     (move) => move.to === to && (move.promotion || undefined) === promotion
   );
@@ -266,6 +441,7 @@ function playMove(from, to, promotion) {
   autoFinish();
   persist();
   renderAll();
+  if (!result) startComputerTurn();
 }
 
 function renderMoves() {
@@ -297,12 +473,31 @@ function renderMoves() {
     list.scrollTop = list.scrollHeight;
   }
   $("total-moves").textContent = history.length + (history.length === 1 ? " zet" : " zetten");
-  $("undo-button").disabled = history.length === 0;
+  $("undo-button").disabled = history.length === 0 ||
+    (gameMode === "computer" && !history.some((move) => move.color === playerColor));
   $("pgn-button").disabled = history.length === 0;
   $("move-count").textContent = "ZET " + (Math.floor(history.length / 2) + 1);
 }
 
 function renderStatus() {
+  $("computer-settings").hidden = gameMode !== "computer";
+  $("game-mode").value = gameMode;
+  $("player-color").value = playerColor;
+  $("computer-level").value = computerLevel;
+  $("header-pill").lastChild.textContent = gameMode === "computer"
+    ? " Tegen Stockfish · 1 speler" : " Lokale partij · 2 spelers";
+  $("board-tip").textContent = gameMode === "computer"
+    ? "Kies een stuk wanneer jij aan zet bent" : "Tik eerst op een stuk en daarna op het doelveld";
+  $("end-helper").textContent = gameMode === "computer"
+    ? "Tegen de computer kun je opgeven of remise claimen volgens de schaakregels."
+    : "Je kunt onderling remise afspreken. Online partijen volgen later.";
+  $("white-player").classList.toggle("is-computer", gameMode === "computer" && playerColor === "b");
+  $("black-player").classList.toggle("is-computer", gameMode === "computer" && playerColor === "w");
+  $("white-player").querySelector(".player-name").textContent =
+    gameMode === "computer" ? (playerColor === "w" ? "Jij · Wit" : "Computer · Wit") : "Wit";
+  $("black-player").querySelector(".player-name").textContent =
+    gameMode === "computer" ? (playerColor === "b" ? "Jij · Zwart" : "Computer · Zwart") : "Zwart";
+
   const title = $("status-title");
   const description = $("status-description");
   const color = game.turn();
@@ -310,18 +505,24 @@ function renderStatus() {
   if (result) {
     title.textContent = result.text;
     description.textContent = "De partij is beëindigd. Start een nieuw spel of sla de PGN op.";
+  } else if (isComputerTurn()) {
+    title.textContent = computerThinking ? "Computer denkt na…" : "Computer aan zet";
+    description.textContent = engineUnavailable
+      ? "De reservecomputer zoekt een geldige zet."
+      : computerThinking ? "Stockfish berekent zijn volgende zet." : "Stockfish wordt gestart.";
   } else {
-    title.textContent = colorName(color) + " aan zet" + (game.isCheck() ? " · schaak!" : "");
+    title.textContent = (gameMode === "computer" ? "Jij bent aan zet · " : "") +
+      colorName(color) + (game.isCheck() ? " · schaak!" : "");
     description.textContent = game.isCheck()
       ? "Je koning staat schaak. Speel een geldige verdedigende zet."
       : (running ? "De schaakklok loopt." : "Selecteer een stuk en een doelveld.");
   }
 
-  const claimable = !result && (repetitions() >= 3 || halfmoveCount() >= 100);
+  const claimable = !result && (!isComputerTurn()) && (repetitions() >= 3 || halfmoveCount() >= 100);
   $("claim-container").hidden = !claimable;
   $("claim-button").textContent = repetitions() >= 3
     ? "Claim remise · driemaal herhaling" : "Claim remise · 50-zettenregel";
-  $("draw-button").disabled = Boolean(result);
+  $("draw-button").disabled = Boolean(result) || gameMode === "computer";
   $("resign-button").disabled = Boolean(result);
   $("clock-button").disabled = Boolean(result) || !isTimed();
   $("clock-button").textContent = running ? "Ⅱ Pauzeer klok" : "▶ " + (hasStarted ? "Hervat klok" : "Start klok");
@@ -344,7 +545,8 @@ function renderClocks() {
     $("black-player".replace("black", color === "w" ? "white" : "black")).classList.toggle("is-active", active);
     $(color === "w" ? "white-subtitle" : "black-subtitle").textContent = result
       ? "Partij beëindigd"
-      : active ? running ? "Klok loopt" : "Aan zet"
+      : active && isComputerTurn() ? "Denkt na…"
+        : active ? running ? "Klok loopt" : "Aan zet"
         : "Wacht op tegenstander";
   }
 }
@@ -357,6 +559,15 @@ function renderAll() {
 }
 
 function resetGame() {
+  cancelComputer();
+  gameMode = $("game-mode").value;
+  playerColor = $("player-color").value;
+  computerLevel = $("computer-level").value;
+  engineUnavailable = false;
+  $("computer-help").textContent = "Je speelt tegen Stockfish. De computer reageert automatisch op je zet.";
+  $("computer-help").classList.remove("is-error");
+  if (gameMode === "computer") flipped = playerColor === "b";
+  else flipped = false;
   game = new Chess();
   selected = null;
   pendingPromotion = null;
@@ -374,6 +585,7 @@ function resetGame() {
   positionKeys = [repetitionKey()];
   persist();
   renderAll();
+  startComputerTurn();
 }
 
 function confirmNewGame() {
@@ -383,22 +595,29 @@ function confirmNewGame() {
 }
 
 function undoMove() {
-  if (!game.history().length) return;
+  const history = game.history({ verbose: true });
+  if (!history.length) return;
+  if (gameMode === "computer" && !history.some((move) => move.color === playerColor)) return;
   chargeClock();
-  game.undo();
-  const snapshot = moveClocks.pop();
-  remaining = { w: snapshot?.w ?? initialMs, b: snapshot?.b ?? initialMs };
-  hasStarted = snapshot?.hasStarted ?? false;
+  cancelComputer();
+  const last = history.at(-1);
+  const steps = gameMode === "computer" && last.color !== playerColor ? 2 : 1;
+  for (let count = 0; count < steps; count++) {
+    game.undo();
+    const snapshot = moveClocks.pop();
+    remaining = { w: snapshot?.w ?? initialMs, b: snapshot?.b ?? initialMs };
+    hasStarted = snapshot?.hasStarted ?? false;
+    positionKeys.pop();
+  }
   running = false;
   anchor = Date.now();
-  positionKeys.pop();
   result = null;
   selected = null;
-  // Clear a previously added PGN Result header when play is resumed.
   if (typeof game.removeHeader === "function") game.removeHeader("Result");
   persist();
   renderAll();
-  notify("Zet teruggenomen. De klok is gepauzeerd.");
+  notify(steps === 2 ? "Jouw zet en die van de computer teruggenomen." : "Zet teruggenomen. De klok is gepauzeerd.");
+  startComputerTurn();
 }
 
 function claimDraw() {
@@ -424,7 +643,8 @@ function persist() {
       from: move.from, to: move.to, ...(move.promotion ? { promotion: move.promotion } : {})
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      moves, control, remaining, hasStarted, moveClocks, positionKeys, result, flipped
+      moves, control, remaining, hasStarted, moveClocks, positionKeys, result, flipped,
+      gameMode, playerColor, computerLevel
     }));
   } catch {
     // The game remains playable if browser storage is unavailable.
@@ -442,6 +662,17 @@ function restore() {
     for (const move of saved.moves) loaded.move(move);
     if (saved.positionKeys.length !== saved.moves.length + 1 || saved.moveClocks.length !== saved.moves.length) return false;
 
+    cancelComputer();
+    gameMode = saved.gameMode === "computer" ? "computer" : "local";
+    playerColor = saved.playerColor === "b" ? "b" : "w";
+    computerLevel = Object.hasOwn(COMPUTER_LEVELS, saved.computerLevel)
+      ? saved.computerLevel : "medium";
+    $("game-mode").value = gameMode;
+    $("player-color").value = playerColor;
+    $("computer-level").value = computerLevel;
+    engineUnavailable = false;
+    $("computer-help").textContent = "Je speelt tegen Stockfish. De computer reageert automatisch op je zet.";
+    $("computer-help").classList.remove("is-error");
     game = loaded;
     control = saved.control;
     $("time-control").value = control;
@@ -499,6 +730,27 @@ $("clock-button").addEventListener("click", () => {
 
 $("new-game-button").addEventListener("click", confirmNewGame);
 
+function changedGameSettings(select, previous) {
+  if (game.history().length &&
+    !window.confirm("Deze instelling start een nieuwe partij. De huidige partij beëindigen?")) {
+    select.value = previous;
+    return;
+  }
+  resetGame();
+}
+
+$("game-mode").addEventListener("change", (event) =>
+  changedGameSettings(event.target, gameMode));
+$("player-color").addEventListener("change", (event) =>
+  changedGameSettings(event.target, playerColor));
+$("computer-level").addEventListener("change", (event) => {
+  computerLevel = event.target.value;
+  cancelComputer();
+  persist();
+  renderStatus();
+  startComputerTurn();
+});
+
 $("time-control").addEventListener("change", (event) => {
   const next = event.target.value;
   if (game.history().length && !window.confirm("Een andere bedenktijd start een nieuwe partij. Doorgaan?")) {
@@ -514,15 +766,17 @@ $("claim-button").addEventListener("click", claimDraw);
 
 $("draw-button").addEventListener("click", () => {
   if (result || !window.confirm("Zijn beide spelers akkoord met remise?")) return;
+  if (gameMode === "computer") return;
   finish("Remise in onderling overleg.", "1/2-1/2");
   persist();
   renderAll();
 });
 
 $("resign-button").addEventListener("click", () => {
-  if (result || !window.confirm(colorName(game.turn()) + " geeft op. Klopt dat?")) return;
-  const winner = opposite(game.turn());
-  finish(colorName(winner) + " wint: " + colorName(game.turn()) + " geeft op.", winner === "w" ? "1-0" : "0-1");
+  const quitter = gameMode === "computer" ? playerColor : game.turn();
+  if (result || !window.confirm(colorName(quitter) + " geeft op. Klopt dat?")) return;
+  const winner = opposite(quitter);
+  finish(colorName(winner) + " wint: " + colorName(quitter) + " geeft op.", winner === "w" ? "1-0" : "0-1");
   persist();
   renderAll();
 });
@@ -553,6 +807,7 @@ $("promotion-dialog").addEventListener("cancel", (event) => {
 
 if (!restore()) resetGame();
 renderAll();
+startComputerTurn();
 window.setInterval(() => {
   if (running) {
     chargeClock();
