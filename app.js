@@ -196,6 +196,11 @@ function startComputerTurn() {
   }
   try {
     if (!computer) computer = new StockfishOpponent(accept, useFallback);
+    else {
+      // Each new position needs callbacks tied to its own cancellation token.
+      computer.onMove = accept;
+      computer.onFailure = useFallback;
+    }
     computer.ask(fen, computerLevel);
   } catch {
     useFallback(fen);
