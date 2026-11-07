@@ -127,3 +127,164 @@ select { background:#0f1d1b; border:1px solid #455c4f; color:#f1eee1; border-rad
 #black-player.is-computer .black-avatar,
 #white-player.is-computer .white-avatar { outline:2px solid #d8b477; outline-offset:2px; }
 @media (max-width:380px) { .computer-controls { grid-template-columns:1fr; } }
+
+
+/* ── Masters of Chess: restrained motion system (v1.2) ────────────── */
+.page { position:relative; z-index:1; }
+body::before {
+  content:""; position:fixed; inset:-14%; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 28%, rgba(119,157,112,.095), transparent 38%),
+    radial-gradient(circle at 78% 70%, rgba(212,178,114,.06), transparent 42%);
+  will-change:transform;
+  animation:ambientDrift 24s ease-in-out infinite alternate;
+}
+.site-header { animation:entryRise .55s cubic-bezier(.2,.75,.25,1) both; }
+.intro { animation:entryRise .64s .08s cubic-bezier(.2,.75,.25,1) both; }
+.arena { animation:entryRise .7s .13s cubic-bezier(.2,.75,.25,1) both; }
+.sidebar .panel { animation:entryRise .52s cubic-bezier(.2,.75,.25,1) both; }
+.sidebar .panel:nth-child(1) { animation-delay:.16s; }
+.sidebar .panel:nth-child(2) { animation-delay:.24s; }
+.sidebar .panel:nth-child(3) { animation-delay:.32s; }
+.sidebar .panel:nth-child(4) { animation-delay:.4s; }
+
+.brand-mark {
+  position:relative;
+  transition:transform .35s cubic-bezier(.2,.9,.3,1), box-shadow .35s ease;
+  animation:brandBreathe 6s ease-in-out infinite;
+}
+.brand:hover .brand-mark { transform:rotate(-7deg) scale(1.06); box-shadow:0 8px 34px #d1aa714a; }
+.header-pill { transition:border-color .25s ease, background .25s ease; }
+.header-pill:hover { border-color:#8c9f7d; background:#253e35; }
+.live-dot { animation:liveGlow 2.2s ease-in-out infinite; }
+.board-frame { transition:box-shadow .35s ease, border-color .35s ease; }
+.board-frame:hover { box-shadow:0 27px 65px #0007,0 0 26px #d3b57512; }
+
+.player-card {
+  position:relative; overflow:hidden;
+  transition:background .28s ease, box-shadow .28s ease, border-color .28s ease, transform .28s ease;
+}
+.player-card::before {
+  content:""; position:absolute; left:0; top:17%; height:66%; width:3px;
+  border-radius:0 3px 3px 0; background:#e8c68c;
+  opacity:0; transform:scaleY(.2);
+  transition:opacity .25s ease, transform .3s cubic-bezier(.2,.8,.2,1);
+}
+.player-card.is-active::before { opacity:1; transform:scaleY(1); }
+.player-card.is-active { background:#22332d; }
+.player-card.is-active .avatar { animation:playerAwake .42s cubic-bezier(.2,.8,.2,1) both; }
+
+.clock { position:relative; overflow:hidden; transition:background .25s ease,color .25s ease,box-shadow .25s ease,transform .25s ease; }
+.clock.is-running { box-shadow:0 0 0 1px #f7d8a535,0 0 21px #e7ba6b25; }
+.clock.is-running::after {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(105deg,transparent 15%,#ffffff25 48%,transparent 80%);
+  transform:translateX(-145%); animation:clockShine 4.5s ease-in-out infinite;
+  pointer-events:none;
+}
+.clock.is-running.is-low { animation:lowTimeGlow 1.4s ease-in-out infinite; }
+
+.square { isolation:isolate; }
+.square .piece {
+  transition:transform .2s cubic-bezier(.2,.78,.25,1), filter .2s ease;
+  will-change:auto;
+}
+@media (hover:hover) {
+  .square:hover:not(.square-animating) .piece { transform:translateY(-3px) scale(1.065); filter:drop-shadow(0 4px 3px #0004); }
+  .square:hover:not(.selected) { filter:brightness(1.06); }
+}
+.square.selected .piece { animation:selectedBounce .35s cubic-bezier(.2,.9,.2,1) both; }
+.square .piece.piece-traveling {
+  position:relative; z-index:8; will-change:transform,filter;
+  animation:none!important;
+}
+.square.square-animating { z-index:5; }
+.square .dot { animation:targetBreathe 1.65s ease-in-out infinite; }
+.square .capture-ring { animation:captureHint 1.9s ease-in-out infinite; }
+.square.move-origin-pulse::after {
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:rgba(241,211,129,.6);
+  animation:sourceFlash .55s ease-out both;
+}
+.square.move-destination-pulse::before {
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  box-shadow:inset 0 0 0 4px rgba(239,207,123,.9);
+  animation:destinationFlash .68s ease-out both;
+}
+.square .captured-ghost {
+  position:absolute; inset:0; display:grid; place-items:center;
+  z-index:7; pointer-events:none;
+  animation:capturedFade .43s cubic-bezier(.2,.8,.2,1) forwards!important;
+}
+.square .capture-burst {
+  position:absolute; top:35%; left:35%; width:30%; aspect-ratio:1;
+  border:3px solid #f8d495; border-radius:50%; pointer-events:none; z-index:6;
+  animation:capturePulse .48s ease-out forwards;
+}
+.square.in-check::after {
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
+  border:3px solid #c84f4bbd; box-shadow:inset 0 0 18px #c84f4b70;
+  animation:checkWarning 1.35s ease-in-out infinite;
+}
+.square.in-check.check-arrival::after { animation:checkArrival .55s ease-out,checkWarning 1.35s .55s ease-in-out infinite; }
+
+.status-panel { position:relative; overflow:hidden; transition:border-color .3s ease, background .3s ease, box-shadow .3s ease; }
+.status-panel.is-thinking { border-color:#967c51; box-shadow:0 0 24px #bb955619; }
+.status-panel.is-thinking::after {
+  content:""; position:absolute; left:0; bottom:0; height:3px; width:36%;
+  background:linear-gradient(90deg,transparent,#e6c18c,transparent);
+  animation:thinkingSweep 1.55s ease-in-out infinite;
+}
+.status-panel.is-thinking .status-icon { animation:thinkingFloat 1.55s ease-in-out infinite; }
+.status-panel.is-checking { border-color:#a15b4f; }
+.status-panel.is-finished { border-color:#b99660; box-shadow:0 0 28px #b9966019; }
+.status-panel.is-finished .status-icon { animation:finishMedal .8s cubic-bezier(.15,.7,.25,1) both; }
+.status-title, .status-row h3 { transition:color .2s ease; }
+.status-panel.is-checking .status-row h3 { color:#f1a29a; }
+.status-row h3.result-arrival { animation:resultReveal .55s cubic-bezier(.2,.8,.2,1) both; }
+.move-row:last-child { animation:moveRowReveal .36s cubic-bezier(.2,.9,.2,1) both; }
+
+.primary-button,.secondary-button,.tertiary-button,.text-button {
+  transition:transform .16s ease,background .2s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease;
+}
+button:not(:disabled):active { transform:scale(.97); }
+.primary-button:hover:not(:disabled) { box-shadow:0 6px 22px #d9b67733; transform:translateY(-1px); }
+.secondary-button:hover:not(:disabled),.tertiary-button:hover:not(:disabled) { transform:translateY(-1px); }
+select { transition:border-color .2s ease,box-shadow .2s ease; }
+select:focus { border-color:#d8b778; box-shadow:0 0 0 3px #d9b6771e; }
+.promotion-dialog[open] { animation:modalReveal .3s cubic-bezier(.2,.9,.2,1) both; }
+.promotion-choice { transition:transform .18s ease,background .2s ease,box-shadow .2s ease; }
+.promotion-choice:hover { transform:translateY(-4px) scale(1.035);box-shadow:0 9px 18px #0003; }
+
+@keyframes ambientDrift { 0%{transform:translate3d(-1.5%,1%,0)} 100%{transform:translate3d(2%,-1.5%,0)} }
+@keyframes entryRise { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+@keyframes liveGlow { 0%,100%{box-shadow:0 0 0 4px #91c7a31b} 50%{box-shadow:0 0 0 7px #91c7a30b} }
+@keyframes brandBreathe { 0%,100%{box-shadow:0 6px 22px #0004} 50%{box-shadow:0 9px 31px #c09b5940} }
+@keyframes playerAwake { from{transform:scale(.9)} to{transform:scale(1)} }
+@keyframes clockShine { 0%,60%,100%{transform:translateX(-145%)} 82%{transform:translateX(145%)} }
+@keyframes lowTimeGlow { 0%,100%{box-shadow:0 0 7px #a75e5050} 50%{box-shadow:0 0 23px #ef766c75} }
+@keyframes selectedBounce { 0%{transform:translateY(0)} 52%{transform:translateY(-5px) scale(1.09)} 100%{transform:translateY(-2px) scale(1.04)} }
+@keyframes targetBreathe { 0%,100%{opacity:.33;transform:scale(.9)} 50%{opacity:.6;transform:scale(1.22)} }
+@keyframes captureHint { 0%,100%{opacity:.35;transform:scale(.98)} 50%{opacity:.72;transform:scale(.92)} }
+@keyframes sourceFlash { from{opacity:.85} to{opacity:0} }
+@keyframes destinationFlash { 0%{opacity:.92} 100%{opacity:0} }
+@keyframes capturedFade { 0%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:translateY(-12px) scale(.48) rotate(-16deg)} }
+@keyframes capturePulse { 0%{opacity:.9;transform:scale(.4)} 100%{opacity:0;transform:scale(3.15)} }
+@keyframes checkWarning { 0%,100%{opacity:.4} 50%{opacity:.95} }
+@keyframes checkArrival { 0%{opacity:0;box-shadow:inset 0 0 0 #c84f4b} 40%{opacity:1;box-shadow:inset 0 0 35px #c84f4b} 100%{opacity:.5;box-shadow:inset 0 0 18px #c84f4b70} }
+@keyframes thinkingSweep { 0%{transform:translateX(-130%)} 100%{transform:translateX(400%)} }
+@keyframes thinkingFloat { 0%,100%{transform:translateY(0);opacity:.7} 50%{transform:translateY(-4px);opacity:1} }
+@keyframes finishMedal { from{transform:scale(.72) rotate(-8deg);opacity:.4} to{transform:scale(1) rotate(0);opacity:1} }
+@keyframes resultReveal { from{opacity:.3;transform:translateY(7px)} to{opacity:1;transform:translateY(0)} }
+@keyframes moveRowReveal { from{opacity:.35;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes modalReveal { from{opacity:0;transform:translateY(12px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after {
+    animation:none!important;
+    transition:none!important;
+    scroll-behavior:auto!important;
+  }
+  body::before { display:none; }
+  .square .captured-ghost,.square .capture-burst { display:none; }
+}
