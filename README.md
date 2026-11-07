@@ -5,7 +5,9 @@ Een moderne schaakapp voor **twee spelers op één apparaat** of **tegen de comp
 ## Functies
 
 - Volledig 8×8-schaakbord met legale zetten, schaakmat, pat, rokade, en passant en pionpromotie via [chess.js](https://github.com/jhlywa/chess.js).
-- **Computertegenstander: Stockfish 19 Lite (single-threaded)**, vier instelbare moeilijkheidsniveaus: beginner, recreatief, gevorderd en expert.
+- **Vijf niveaus tegen de computer:** Oefenen (zeer makkelijk), Beginner, Recreatief, Gevorderd en Expert.
+- **Oefenen, Beginner en Recreatief** gebruiken bewust een eenvoudige, foutgevoelige tegenstander. Hij kiest alleen geldige zetten, maar mist geregeld kansen en ziet geen ingewikkelde tactiek.
+- **Gevorderd en Expert** gebruiken Stockfish 19 Lite (single-threaded), zodat de hogere niveaus uitdagend blijven.
 - Zelf kiezen met wit of zwart; het bord draait automatisch mee voor zwart.
 - Bestaande lokale modus voor twee spelers blijft werken.
 - Bedenktijd: 3+2, 5+0, 10+5, 15+10, 30+0 of onbeperkt.
@@ -28,7 +30,7 @@ python -m http.server 8000
 
 Open http://localhost:8000. `npm install` voert automatisch `scripts/prepare-engine.mjs` uit en zet de Stockfish-werknemer plus WASM in `engine/`. Die gegenereerde bestanden staan in .gitignore.
 
-De browser laadt chess.js 1.4.0 vanaf jsDelivr. Hiervoor is internet nodig. Stockfish draait lokaal in een Web Worker; er worden geen zetten naar een externe schaakserver verstuurd.
+De browser laadt chess.js 1.4.0 vanaf jsDelivr. Hiervoor is internet nodig. Op de twee hoogste niveaus draait Stockfish lokaal in een Web Worker. De drie laagste niveaus draaien direct in de browser zonder Stockfish. Er worden geen zetten naar een externe schaakserver verstuurd.
 
 ## Tests
 
@@ -43,6 +45,7 @@ De tests controleren onder meer schaakmat, rokade, bijzondere zetten, opslag/her
 
 - Start bij voorkeur de klok vóór de eerste zet. Anders begint deze automatisch **na de eerste zet**.
 - De computer doet zelfstandig zijn zet zodra hij aan de beurt is, óók als je zwart kiest.
+- **Oefenen** is speciaal bedoeld om zetten en slaan rustig te oefenen. De tegenstander maakt veel fouten en gebruikt geen openingstheorie of diepe berekeningen. **Beginner** is iets sterker, maar nog steeds duidelijk onder Stockfish-niveau. Bij **Recreatief** let de computer meer op eenvoudig materiaalwinst.
 - In de computermodus doet **Zet terug** ook de voorafgaande computerzet ongedaan, zodat je een andere zet kunt proberen.
 - Het opgeven van een partij tegen de computer betekent altijd dat **jij** opgeeft, ook wanneer de computer nadenkt.
 - Remise onderling afspreken is alleen in de lokale modus mogelijk. Reglementair remise claimen kan wel in de computermodus.
