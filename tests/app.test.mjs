@@ -397,6 +397,9 @@ test("castling animates the rook and reduced-motion disables decorative effects"
 
   const reduced = setup();
   reduced.window.matchMedia = () => ({ matches: true });
+  const setting = reduced.document.getElementById("motion-preset");
+  setting.value = "system";
+  setting.dispatchEvent(new reduced.window.Event("change"));
   reduced.move("e2", "e4");
   assert.ok(!reduced.document.querySelector(".move-origin-pulse"));
   assert.ok(!reduced.document.querySelector(".capture-burst"));
@@ -461,6 +464,8 @@ test("a computer reply only starts after the human piece finishes its flight", a
   const { window, document, move } = setup(null, mock.Worker);
   const animations = mockActualMotion(window);
   const mode = document.getElementById("game-mode");
+  document.getElementById("computer-level").value = "medium";
+  document.getElementById("computer-level").dispatchEvent(new window.Event("change"));
   mode.value = "computer";
   mode.dispatchEvent(new window.Event("change"));
   move("e2", "e4");
