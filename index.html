@@ -88,14 +88,15 @@
               <div>
                 <label class="select-label" for="computer-level">Moeilijkheid</label>
                 <select id="computer-level">
-                  <option value="beginner">Beginner</option>
+                  <option value="practice">Oefenen · zeer makkelijk</option>
+                  <option value="beginner" selected>Beginner · makkelijk</option>
                   <option value="easy">Recreatief</option>
-                  <option value="medium" selected>Gevorderd</option>
-                  <option value="hard">Expert</option>
+                  <option value="medium">Gevorderd · Stockfish</option>
+                  <option value="hard">Expert · Stockfish</option>
                 </select>
               </div>
             </div>
-            <p class="helper" id="computer-help">Je speelt tegen Stockfish. De computer reageert automatisch op je zet.</p>
+            <p class="helper" id="computer-help">De computer past zijn speelsterkte aan jouw niveau aan.</p>
           </div>
           <label class="select-label time-label" for="time-control">Bedenktijd</label>
           <select id="time-control">
