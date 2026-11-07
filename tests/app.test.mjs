@@ -359,9 +359,12 @@ test("switching from practice to stronger level while a move is pending cancels 
   level.value = "medium";
   level.dispatchEvent(new window.Event("change"));
   assert.equal(workers.workers.length, 1);
-  timers.flush();
+  // The one remaining timer belongs to Stockfish's startup watchdog;
+  // the previous weak-opponent move timer must have been cancelled.
+  assert.equal(timers.pending(), 1);
   assert.equal(document.getElementById("total-moves").textContent, "1 zet");
   workers.workers[0].emit("readyok");
+  assert.equal(timers.pending(), 0);
   workers.workers[0].emit("bestmove d7d5");
   assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
   window.close();
