@@ -403,3 +403,94 @@ test("castling animates the rook and reduced-motion disables decorative effects"
   assert.equal(reduced.document.getElementById("total-moves").textContent, "1 zet");
   reduced.window.close();
 });
+
+
+function mockActualMotion(window) {
+  const animations = [];
+  window.Element.prototype.getBoundingClientRect = function () {
+    if (this.id === "motion-layer") {
+      return { left: 0, top: 0, right: 640, bottom: 640, width: 640, height: 640 };
+    }
+    const square = this.dataset?.square;
+    if (square) {
+      const col = "abcdefgh".indexOf(square[0]);
+      const row = 8 - Number(square[1]);
+      return { left: col * 80, top: row * 80, right: (col+1)*80, bottom: (row+1)*80, width: 80, height: 80 };
+    }
+    return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  };
+  window.Element.prototype.animate = function (keyframes, options) {
+    let complete;
+    const finished = new Promise((resolve) => { complete = resolve; });
+    const handle = {
+      element: this, keyframes, options, finished,
+      finish() { complete(); },
+      cancel() { complete(); }
+    };
+    animations.push(handle);
+    return handle;
+  };
+  return animations;
+}
+
+test("pieces visibly travel across board on a separate overlay, rather than teleport", async () => {
+  const { window, document, move } = setup();
+  const animations = mockActualMotion(window);
+  move("e2", "e4");
+
+  assert.equal(animations.length, 1);
+  assert.equal(animations[0].options.duration, 650);
+  assert.match(animations[0].keyframes.at(-1).transform, /-160px/);
+  assert.equal(document.querySelectorAll("#motion-layer .flying-piece-square").length, 1);
+  assert.ok(document.querySelector('[data-square="e4"] .piece').classList.contains("piece-in-transit"));
+
+  // No second move can be made while the first piece is crossing the board.
+  move("d7", "d5");
+  assert.equal(document.getElementById("total-moves").textContent, "1 zet");
+  animations[0].finish();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(document.querySelectorAll("#motion-layer .flying-piece-square").length, 0);
+  assert.ok(!document.querySelector('[data-square="e4"] .piece').classList.contains("piece-in-transit"));
+  move("d7", "d5");
+  assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
+  window.close();
+});
+
+test("a computer reply only starts after the human piece finishes its flight", async () => {
+  const mock = makeWorker();
+  const { window, document, move } = setup(null, mock.Worker);
+  const animations = mockActualMotion(window);
+  const mode = document.getElementById("game-mode");
+  mode.value = "computer";
+  mode.dispatchEvent(new window.Event("change"));
+  move("e2", "e4");
+  assert.equal(mock.workers.length, 0);
+  animations[0].finish();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(mock.workers.length, 1);
+  window.close();
+});
+
+test("animation speed setting works, is persisted, and interrupted moves clean up", () => {
+  const { window, document, move } = setup();
+  const animations = mockActualMotion(window);
+  const preset = document.getElementById("motion-preset");
+  preset.value = "slow";
+  preset.dispatchEvent(new window.Event("change"));
+  move("e2", "e4");
+  assert.equal(animations.length, 1);
+  assert.equal(animations[0].options.duration, 1100);
+  assert.equal(document.querySelectorAll(".flying-piece-square").length, 1);
+
+  document.getElementById("undo-button").click();
+  assert.equal(document.querySelectorAll(".flying-piece-square").length, 0);
+  assert.equal(document.getElementById("total-moves").textContent, "0 zetten");
+  assert.equal(JSON.parse(window.localStorage.getItem("masters-of-chess-local-v1")).motionPreset, "slow");
+
+  preset.value = "off";
+  preset.dispatchEvent(new window.Event("change"));
+  move("d2", "d4");
+  assert.equal(document.querySelectorAll(".flying-piece-square").length, 0);
+  assert.equal(animations.length, 1);
+  window.close();
+});
