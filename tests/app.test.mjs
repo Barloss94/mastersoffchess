@@ -32,7 +32,7 @@ function makeWorker() {
   return { Worker: FakeWorker, workers };
 }
 
-function setup(saved = null, WorkerClass = null) {
+function setup(saved = null, WorkerClass = null, timers = null) {
   const dom = new JSDOM(html, {
     url: "https://example.test/",
     runScripts: "outside-only",
@@ -41,6 +41,10 @@ function setup(saved = null, WorkerClass = null) {
   const { window } = dom;
   window.__Chess = Chess;
   if (WorkerClass) window.Worker = WorkerClass;
+  if (timers) {
+    window.setTimeout = timers.setTimeout;
+    window.clearTimeout = timers.clearTimeout;
+  }
   window.confirm = () => true;
   window.setInterval = () => 1; // avoid real clocks in deterministic UI tests
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -149,6 +153,7 @@ test("playing black starts Stockfish as white and one undo reverts a whole turn"
   };
 
   change("player-color", "b");
+  change("computer-level", "medium");
   change("game-mode", "computer");
   assert.equal(document.getElementById("computer-settings").hidden, false);
   assert.equal(mock.workers.length, 1);
@@ -188,6 +193,9 @@ test("switching mode and resetting cancel an obsolete engine search", () => {
   const mock = makeWorker();
   const { document, window, move } = setup(null, mock.Worker);
   const mode = document.getElementById("game-mode");
+  const level = document.getElementById("computer-level");
+  level.value = "medium";
+  level.dispatchEvent(new window.Event("change"));
   mode.value = "computer";
   mode.dispatchEvent(new window.Event("change"));
   move("e2", "e4");
@@ -214,6 +222,9 @@ test("resigning while Stockfish thinks awards the game to the computer", () => {
   const mock = makeWorker();
   const { document, window, move } = setup(null, mock.Worker);
   const mode = document.getElementById("game-mode");
+  const level = document.getElementById("computer-level");
+  level.value = "medium";
+  level.dispatchEvent(new window.Event("change"));
   mode.value = "computer";
   mode.dispatchEvent(new window.Event("change"));
   move("e2", "e4");
@@ -249,4 +260,109 @@ test("computer difficulty and game mode survive reload with a pending bot turn",
   mock2.workers[0].emit("readyok");
   assert.ok(mock2.workers[0].messages.includes("go depth 16 movetime 1500"));
   second.window.close();
+});
+
+
+function makeManualTimers() {
+  let nextId = 0;
+  const scheduled = new Map();
+  return {
+    setTimeout(fn) {
+      const id = ++nextId;
+      scheduled.set(id, fn);
+      return id;
+    },
+    clearTimeout(id) {
+      scheduled.delete(id);
+    },
+    flush() {
+      const batch = [...scheduled.entries()];
+      for (const [id, fn] of batch) {
+        if (!scheduled.has(id)) continue;
+        scheduled.delete(id);
+        fn();
+      }
+    },
+    pending() {
+      return scheduled.size;
+    }
+  };
+}
+
+test("practice mode plays legal moves without ever starting Stockfish", () => {
+  const workers = makeWorker();
+  const timers = makeManualTimers();
+  const { document, window, move } = setup(null, workers.Worker, timers);
+  const color = document.getElementById("player-color");
+  color.value = "b";
+  color.dispatchEvent(new window.Event("change"));
+
+  const mode = document.getElementById("game-mode");
+  mode.value = "computer";
+  mode.dispatchEvent(new window.Event("change"));
+
+  const level = document.getElementById("computer-level");
+  level.value = "practice";
+  level.dispatchEvent(new window.Event("change"));
+  assert.equal(workers.workers.length, 0, "practice mode does not use Stockfish");
+  assert.equal(document.getElementById("total-moves").textContent, "0 zetten");
+  assert.match(document.getElementById("computer-help").textContent, /willekeurige zetten/);
+
+  timers.flush();
+  assert.equal(document.getElementById("total-moves").textContent, "1 zet");
+  assert.match(document.getElementById("status-title").textContent, /Jij bent aan zet/);
+
+  move("e7", "e5");
+  assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
+  timers.flush();
+  assert.equal(document.getElementById("total-moves").textContent, "3 zetten");
+  assert.equal(workers.workers.length, 0);
+  window.close();
+});
+
+test("beginner uses the weak computer and cancels its delayed move when resetting", () => {
+  const workers = makeWorker();
+  const timers = makeManualTimers();
+  const { document, window, move } = setup(null, workers.Worker, timers);
+  const mode = document.getElementById("game-mode");
+  mode.value = "computer";
+  mode.dispatchEvent(new window.Event("change"));
+  assert.equal(document.getElementById("computer-level").value, "beginner");
+  assert.equal(workers.workers.length, 0);
+
+  move("e2", "e4");
+  assert.match(document.getElementById("status-title").textContent, /Computer denkt na/);
+  assert.equal(workers.workers.length, 0);
+  document.getElementById("new-game-button").click();
+  timers.flush();
+  assert.equal(document.getElementById("total-moves").textContent, "0 zetten");
+  move("d2", "d4");
+  timers.flush();
+  assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
+  assert.match(document.getElementById("status-title").textContent, /Jij bent aan zet/);
+  window.close();
+});
+
+test("switching from practice to stronger level while a move is pending cancels old AI", () => {
+  const workers = makeWorker();
+  const timers = makeManualTimers();
+  const { document, window, move } = setup(null, workers.Worker, timers);
+  const mode = document.getElementById("game-mode");
+  mode.value = "computer";
+  mode.dispatchEvent(new window.Event("change"));
+  const level = document.getElementById("computer-level");
+  level.value = "practice";
+  level.dispatchEvent(new window.Event("change"));
+  move("d2", "d4");
+  assert.equal(workers.workers.length, 0);
+
+  level.value = "medium";
+  level.dispatchEvent(new window.Event("change"));
+  assert.equal(workers.workers.length, 1);
+  timers.flush();
+  assert.equal(document.getElementById("total-moves").textContent, "1 zet");
+  workers.workers[0].emit("readyok");
+  workers.workers[0].emit("bestmove d7d5");
+  assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
+  window.close();
 });
