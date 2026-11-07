@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101a1b" />
+  <meta name="description" content="Masters of Chess: speel lokaal een volledige schaakpartij met klok, officiële regels en partijgeschiedenis." />
+  <title>Masters of Chess — Schaakarena</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">♞</div>
+        <div>
+          <span class="eyebrow">THE BOARD IS YOURS</span>
+          <h1>MASTERS <span>OF CHESS</span></h1>
+        </div>
+      </div>
+      <div class="header-pill"><span class="live-dot"></span> Lokale partij · 2 spelers</div>
+    </header>
+
+    <div class="intro">
+      <div>
+        <span class="eyebrow">SCHAAKARENA</span>
+        <h2>Elke zet telt.</h2>
+        <p>Speel samen op één apparaat. Met een officiële schaakengine, bedenktijd en complete zetgeschiedenis.</p>
+      </div>
+      <span class="edition">VERSIE 1.0 <span>•</span> LOCAL PLAY</span>
+    </div>
+
+    <main class="layout">
+      <section class="arena" aria-label="Schaakbord">
+        <div class="player-card" id="black-player">
+          <div class="player-details">
+            <div class="avatar black-avatar" aria-hidden="true">♚</div>
+            <div><div class="player-name">Zwart</div><div class="player-subtitle" id="black-subtitle">Wacht op wit</div></div>
+          </div>
+          <div class="clock" id="clock-b" role="timer" aria-label="Resterende tijd zwart">10:00</div>
+        </div>
+
+        <div class="board-frame">
+          <div id="board" class="board" role="grid" aria-label="Schaakbord, wit onderaan"></div>
+        </div>
+
+        <div class="player-card" id="white-player">
+          <div class="player-details">
+            <div class="avatar white-avatar" aria-hidden="true">♔</div>
+            <div><div class="player-name">Wit</div><div class="player-subtitle" id="white-subtitle">Begint de partij</div></div>
+          </div>
+          <div class="clock" id="clock-w" role="timer" aria-label="Resterende tijd wit">10:00</div>
+        </div>
+
+        <div class="under-board">
+          <button class="text-button" id="flip-button" type="button"><span aria-hidden="true">⇅</span> Bord draaien</button>
+          <button class="text-button" id="fen-button" type="button"><span aria-hidden="true">⧉</span> FEN kopiëren</button>
+          <span class="notation-tip">Tik eerst op een stuk en daarna op het doelveld</span>
+        </div>
+      </section>
+
+      <aside class="sidebar" aria-label="Partijbeheer">
+        <section class="panel status-panel">
+          <div class="panel-heading"><span class="eyebrow">PARTIJSTATUS</span><span class="round-badge" id="move-count">ZET 1</span></div>
+          <div class="status-row"><span class="status-icon" id="status-icon" aria-hidden="true">♙</span><div><h3 id="status-title">Wit aan zet</h3><p id="status-description">De stukken staan klaar.</p></div></div>
+          <div class="status-claim" id="claim-container" hidden>
+            <button class="secondary-button small-button" id="claim-button" type="button">Claim remise</button>
+          </div>
+        </section>
+
+        <section class="panel settings-panel">
+          <div class="panel-heading"><span class="eyebrow">SPELINSTELLINGEN</span></div>
+          <label class="select-label" for="time-control">Bedenktijd</label>
+          <select id="time-control">
+            <option value="3+2">Blitz · 3 min + 2 sec</option>
+            <option value="5+0">Blitz · 5 minuten</option>
+            <option value="10+5" selected>Rapid · 10 min + 5 sec</option>
+            <option value="15+10">Rapid · 15 min + 10 sec</option>
+            <option value="30+0">Klassiek · 30 minuten</option>
+            <option value="unlimited">Zonder schaakklok</option>
+          </select>
+          <p class="helper">De seconden na het plusteken worden na iedere zet toegevoegd.</p>
+          <div class="button-row">
+            <button id="clock-button" class="primary-button" type="button">▶ Start klok</button>
+            <button id="new-game-button" class="secondary-button" type="button">↻ Nieuw spel</button>
+          </div>
+          <p class="helper" id="clock-help">Start de klok om de bedenktijd van wit te laten lopen.</p>
+        </section>
+
+        <section class="panel move-panel">
+          <div class="panel-heading"><span class="eyebrow">ZETGESCHIEDENIS</span><span id="total-moves" class="move-total">0 zetten</span></div>
+          <div id="move-list" class="move-list" aria-live="polite"><p class="empty-moves">De eerste zet verschijnt hier.</p></div>
+          <div class="move-actions">
+            <button id="undo-button" class="secondary-button" type="button" disabled>↶ Zet terug</button>
+            <button id="pgn-button" class="secondary-button" type="button" disabled>↓ PGN opslaan</button>
+          </div>
+        </section>
+
+        <section class="panel end-panel">
+          <span class="eyebrow">PARTIJ AFRONDEN</span>
+          <div class="button-row">
+            <button id="draw-button" class="tertiary-button" type="button">½ Remise</button>
+            <button id="resign-button" class="tertiary-button danger" type="button">⚑ Opgeven</button>
+          </div>
+          <p class="helper">Deze versie werkt op één apparaat. Online partijen volgen later.</p>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="site-footer"><span>MASTERS OF CHESS</span><span>Het spel is van jou. De zet is aan jou.</span></footer>
+  </div>
+
+  <dialog id="promotion-dialog" class="promotion-dialog" aria-labelledby="promotion-title">
+    <div class="promotion-inner">
+      <span class="eyebrow">PIONPROMOTIE</span>
+      <h3 id="promotion-title">Kies een nieuw stuk</h3>
+      <p>Je pion bereikt de laatste rij.</p>
+      <div class="promotion-choices" id="promotion-choices"></div>
+      <button class="text-button" id="promotion-cancel" type="button">Annuleren</button>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
