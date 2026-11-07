@@ -392,6 +392,99 @@ function getSquares() {
   return squares;
 }
 
+// The game state remains authoritative: motion is only a visual transition
+// between two already-validated chess.js positions.
+function motionAllowed() {
+  return !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+}
+
+function boardSquare(square) {
+  return Array.from($("board").children).find((node) => node.dataset.square === square);
+}
+
+function animatePieceTravel(from, to) {
+  if (!motionAllowed()) return;
+  const origin = boardSquare(from);
+  const destination = boardSquare(to);
+  const symbol = destination?.querySelector(".piece");
+  if (!origin || !destination || !symbol) return;
+
+  origin.classList.add("move-origin-pulse");
+  destination.classList.add("move-destination-pulse");
+
+  const start = origin.getBoundingClientRect();
+  const finish = destination.getBoundingClientRect();
+  if (!start.width || !finish.width) return;
+  const deltaX = start.left - finish.left;
+  const deltaY = start.top - finish.top;
+  destination.classList.add("square-animating");
+  symbol.classList.add("piece-traveling");
+  symbol.style.transition = "none";
+  symbol.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0) scale(1.08)`;
+  symbol.style.filter = "drop-shadow(0 9px 5px rgba(0, 0, 0, .36))";
+  // Commit the initial position before animating to its actual square.
+  void symbol.offsetWidth;
+  const frame = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
+  frame(() => {
+    if (!symbol.isConnected) return;
+    symbol.style.transition = "transform 335ms cubic-bezier(.19,.8,.22,1), filter 335ms ease";
+    symbol.style.transform = "translate3d(0,0,0) scale(1)";
+    symbol.style.filter = "";
+    const cleanup = (event) => {
+      if (event.propertyName !== "transform") return;
+      symbol.removeEventListener("transitionend", cleanup);
+      symbol.classList.remove("piece-traveling");
+      symbol.style.transition = "";
+      symbol.style.transform = "";
+      symbol.style.filter = "";
+      destination.classList.remove("square-animating");
+    };
+    symbol.addEventListener("transitionend", cleanup);
+  });
+}
+
+function animateBoardMove(move) {
+  if (!motionAllowed()) return;
+  const source = move.from;
+  const destination = move.to;
+
+  if (move.captured) {
+    const captureSquare = move.flags.includes("e")
+      ? move.to[0] + move.from[1] : move.to;
+    const square = boardSquare(captureSquare);
+    if (square) {
+      const captured = document.createElement("span");
+      captured.className = "piece captured-ghost " +
+        (move.color === "w" ? "black-piece" : "white-piece");
+      captured.textContent = PIECES[opposite(move.color)][move.captured];
+      captured.setAttribute("aria-hidden", "true");
+      square.append(captured);
+      captured.addEventListener("animationend", () => captured.remove(), { once: true });
+      const burst = document.createElement("span");
+      burst.className = "capture-burst";
+      burst.setAttribute("aria-hidden", "true");
+      square.append(burst);
+      burst.addEventListener("animationend", () => burst.remove(), { once: true });
+    }
+  }
+
+  animatePieceTravel(source, destination);
+  // Castling moves two pieces; the rook follows its own trajectory.
+  if (move.flags.includes("k") || move.flags.includes("q")) {
+    const rank = move.color === "w" ? "1" : "8";
+    const kingSide = move.flags.includes("k");
+    animatePieceTravel((kingSide ? "h" : "a") + rank, (kingSide ? "f" : "d") + rank);
+  }
+  if (game.isCheck()) {
+    boardSquare(
+      game.board().flat().find((piece) =>
+        piece && piece.color === game.turn() && piece.type === "k"
+      )?.square
+    )?.classList.add("check-arrival");
+  }
+  if (result) $("status-title").classList.add("result-arrival");
+}
+
 function renderBoard() {
   const board = $("board");
   board.replaceChildren();
@@ -408,6 +501,7 @@ function renderBoard() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "square " + ((file + rank) % 2 === 0 ? "light" : "dark");
+    button.dataset.square = square;
     button.setAttribute("role", "gridcell");
     button.setAttribute("aria-label", square + (piece ? ", " + NAMES[piece.color][piece.type] : ", leeg"));
     button.setAttribute("aria-selected", String(selected === square));
@@ -498,10 +592,10 @@ function openPromotion(from, to) {
 function playMove(from, to, promotion, source = "human") {
   if (result) return;
   if (gameMode === "computer" && ((source === "computer") !== (game.turn() !== playerColor))) return;
-  const legal = game.moves({ square: from, verbose: true }).some(
+  const legalMove = game.moves({ square: from, verbose: true }).find(
     (move) => move.to === to && (move.promotion || undefined) === promotion
   );
-  if (!legal) {
+  if (!legalMove) {
     notify("Deze zet is niet toegestaan.");
     return;
   }
@@ -524,6 +618,7 @@ function playMove(from, to, promotion, source = "human") {
   autoFinish();
   persist();
   renderAll();
+  animateBoardMove(legalMove);
   if (!result) startComputerTurn();
 }
 
@@ -587,6 +682,9 @@ function renderStatus() {
   $("black-player").querySelector(".player-name").textContent =
     gameMode === "computer" ? (playerColor === "b" ? "Jij · Zwart" : "Computer · Zwart") : "Zwart";
 
+  $("status-panel").classList.toggle("is-thinking", computerThinking && isComputerTurn());
+  $("status-panel").classList.toggle("is-checking", !result && game.isCheck());
+  $("status-panel").classList.toggle("is-finished", Boolean(result));
   const title = $("status-title");
   const description = $("status-description");
   const color = game.turn();
