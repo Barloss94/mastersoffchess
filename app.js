@@ -129,6 +129,7 @@ let positionKeys = [];
 let toastTimer = 0;
 let motionPreset = $("motion-preset").value;
 let activeMotion = null;
+let renderingMoveArrival = false;
 let gameMode = $("game-mode").value;
 let playerColor = $("player-color").value;
 let computerLevel = $("computer-level").value;
@@ -408,6 +409,25 @@ function boardSquare(square) {
   return [...$("board").children].find((node) => node.dataset.square === square);
 }
 
+const effectTimeouts = new Set();
+
+function laterEffect(action, delay) {
+  const id = window.setTimeout(() => {
+    effectTimeouts.delete(id);
+    action();
+  }, delay);
+  effectTimeouts.add(id);
+}
+
+function clearImpactEffects() {
+  for (const id of effectTimeouts) window.clearTimeout(id);
+  effectTimeouts.clear();
+  $("impact-layer").replaceChildren();
+  $("mate-sparks").replaceChildren();
+  $("mate-screen").hidden = true;
+  document.querySelector(".board-frame")?.classList.remove("check-shake", "mate-finale");
+}
+
 function cancelActiveMotion() {
   const current = activeMotion;
   activeMotion = null;
@@ -417,14 +437,18 @@ function cancelActiveMotion() {
     boardSquare(flight.to)?.querySelector(".piece")?.classList.remove("piece-in-transit");
     flight.node.remove();
   }
+  current.victim?.remove();
+}
+
+function capturedOn(move) {
+  return move.flags.includes("e") ? move.to[0] + move.from[1] : move.to;
 }
 
 function prepareMoveMotion(move) {
   if (!motionAllowed() || typeof Element.prototype.animate !== "function") return null;
   const layer = $("motion-layer");
-  if (!layer) return null;
-  const layerBounds = layer.getBoundingClientRect();
-  if (!layerBounds.width) return null;
+  const boardBounds = layer?.getBoundingClientRect();
+  if (!boardBounds?.width) return null;
 
   const flights = [];
   const appendFlight = (from, to) => {
@@ -435,21 +459,18 @@ function prepareMoveMotion(move) {
     const origin = source.getBoundingClientRect();
     const target = destination.getBoundingClientRect();
     if (!origin.width || !target.width) return false;
-
     const flyingSquare = document.createElement("div");
     flyingSquare.className = "square flying-piece-square";
     flyingSquare.setAttribute("aria-hidden", "true");
-    flyingSquare.style.left = (origin.left - layerBounds.left) + "px";
-    flyingSquare.style.top = (origin.top - layerBounds.top) + "px";
+    flyingSquare.style.left = (origin.left - boardBounds.left) + "px";
+    flyingSquare.style.top = (origin.top - boardBounds.top) + "px";
     flyingSquare.style.width = origin.width + "px";
     flyingSquare.style.height = origin.height + "px";
     flyingSquare.append(piece.cloneNode(true));
     layer.append(flyingSquare);
     flights.push({
-      node: flyingSquare,
-      to,
-      dx: target.left - origin.left,
-      dy: target.top - origin.top
+      node: flyingSquare, to,
+      dx: target.left - origin.left, dy: target.top - origin.top
     });
     return true;
   };
@@ -460,14 +481,166 @@ function prepareMoveMotion(move) {
     const kingSide = move.flags.includes("k");
     appendFlight((kingSide ? "h" : "a") + rank, (kingSide ? "f" : "d") + rank);
   }
-  return { flights, animations: [] };
+
+  // Hold the captured piece visually on its square throughout the moving
+  // piece's journey. Only scatter it on impact.
+  let victim = null;
+  if (move.captured) {
+    const square = boardSquare(capturedOn(move));
+    const piece = square?.querySelector(".piece");
+    if (piece) {
+      const bounds = square.getBoundingClientRect();
+      victim = document.createElement("div");
+      victim.className = "square capture-victim";
+      victim.setAttribute("aria-hidden", "true");
+      victim.style.left = (bounds.left - boardBounds.left) + "px";
+      victim.style.top = (bounds.top - boardBounds.top) + "px";
+      victim.style.width = bounds.width + "px";
+      victim.style.height = bounds.height + "px";
+      victim.append(piece.cloneNode(true));
+      layer.append(victim);
+    }
+  }
+  return { flights, animations: [], victim };
+}
+
+function locationOnEffects(squareName) {
+  const target = boardSquare(squareName);
+  const layer = $("impact-layer");
+  if (!target || !layer) return null;
+  const cell = target.getBoundingClientRect();
+  const frame = layer.getBoundingClientRect();
+  return {
+    layer,
+    x: cell.left - frame.left + cell.width / 2,
+    y: cell.top - frame.top + cell.height / 2,
+    width: cell.width
+  };
+}
+
+function effectAt(squareName, className, lifetime, textValue = "") {
+  const point = locationOnEffects(squareName);
+  if (!point) return null;
+  const node = document.createElement("span");
+  node.className = className;
+  node.setAttribute("aria-hidden", "true");
+  if (textValue) node.textContent = textValue;
+  node.style.left = point.x + "px";
+  node.style.top = point.y + "px";
+  point.layer.append(node);
+  if (lifetime) laterEffect(() => node.remove(), lifetime);
+  return node;
+}
+
+function captureOnImpact(move, prepared) {
+  if (!motionAllowed()) return;
+  const where = capturedOn(move);
+  const square = boardSquare(where);
+  if (prepared?.victim) {
+    // Keep the victim on screen for its shattering animation.
+    const victim = prepared.victim;
+    prepared.victim = null;
+    victim.classList.add("is-hit");
+    laterEffect(() => victim.remove(), 950);
+  } else if (square) {
+    // Older browsers without Web Animations still display the capture.
+    const ghost = document.createElement("span");
+    ghost.className = "piece captured-ghost " +
+      (move.color === "w" ? "black-piece" : "white-piece");
+    ghost.textContent = PIECES[opposite(move.color)][move.captured];
+    ghost.setAttribute("aria-hidden", "true");
+    square.append(ghost);
+    laterEffect(() => ghost.remove(), 850);
+  }
+
+  effectAt(where, "capture-shockwave", 1000);
+  effectAt(where, "capture-impact-word", 1250, "GESLAGEN!");
+  const point = locationOnEffects(where);
+  if (!point) return;
+  for (let i = 0; i < 12; i++) {
+    const angle = (Math.PI * 2 * i) / 12;
+    const radius = point.width * (0.75 + (i % 3) * .18);
+    const shard = effectAt(where, "capture-shard", 1100);
+    if (!shard) continue;
+    shard.style.setProperty("--dx", Math.round(Math.cos(angle) * radius) + "px");
+    shard.style.setProperty("--dy", Math.round(Math.sin(angle) * radius) + "px");
+    shard.style.setProperty("--angle", (i * 37) + "deg");
+    shard.style.setProperty("--delay", ((i % 4) * 25) + "ms");
+  }
+  square?.classList.add("capture-impact-square");
+  laterEffect(() => square?.classList.remove("capture-impact-square"), 800);
+}
+
+function showCheckImpact() {
+  if (!game.isCheck()) return;
+  const kingSquare = game.board().flat().find((p) =>
+    p && p.color === game.turn() && p.type === "k"
+  )?.square;
+  if (!kingSquare) return;
+  const square = boardSquare(kingSquare);
+  square?.classList.add("check-arrival");
+  if (!motionAllowed()) return;
+
+  square?.querySelector(".piece")?.classList.add("king-struck");
+  square?.classList.add("king-danger");
+  document.querySelector(".board-frame")?.classList.add("check-shake");
+  effectAt(kingSquare, "check-shockwave", 1150);
+  const label = document.createElement("div");
+  label.className = "check-announcement";
+  label.textContent = game.isCheckmate() ? "SCHAAKMAT!" : "SCHAAK!";
+  label.setAttribute("aria-hidden", "true");
+  $("impact-layer").append(label);
+  laterEffect(() => {
+    label.remove();
+    square?.querySelector(".piece")?.classList.remove("king-struck");
+    square?.classList.remove("king-danger");
+    document.querySelector(".board-frame")?.classList.remove("check-shake");
+  }, 1400);
+}
+
+function syncMateScreen() {
+  const screen = $("mate-screen");
+  const mate = game.isCheckmate();
+  if (!mate) {
+    screen.hidden = true;
+    document.querySelector(".board-frame")?.classList.remove("mate-finale");
+    return;
+  }
+  $("mate-winner").textContent = colorName(opposite(game.turn())) + " wint de partij";
+  if (!screen.hidden) return; // Do not restart celebration during re-render.
+  screen.hidden = false;
+  document.querySelector(".board-frame")?.classList.add("mate-finale");
+  const sparks = $("mate-sparks");
+  sparks.replaceChildren();
+  if (!motionAllowed()) return;
+  for (let i = 0; i < 28; i++) {
+    const spark = document.createElement("span");
+    spark.className = "mate-spark";
+    spark.style.left = (15 + (i * 31) % 70) + "%";
+    spark.style.top = (12 + (i * 19) % 72) + "%";
+    spark.style.setProperty("--dx", ((i % 2 ? 1 : -1) * (20 + i * 4)) + "px");
+    spark.style.setProperty("--dy", ((i % 3 ? 1 : -1) * (50 + i * 2)) + "px");
+    spark.style.setProperty("--delay", ((i % 7) * 80) + "ms");
+    spark.style.setProperty("--rotate", (i * 39) + "deg");
+    sparks.append(spark);
+  }
+  laterEffect(() => sparks.replaceChildren(), 3400);
+}
+
+function runImpactFeedback(move, prepared) {
+  if (move.captured) captureOnImpact(move, prepared);
+  if (game.isCheck()) showCheckImpact();
+  syncMateScreen();
 }
 
 function animateBoardMove(move, prepared) {
   if (!motionAllowed()) {
-    if (prepared) prepared.flights.forEach(({node}) => node.remove());
+    prepared?.flights.forEach((flight) => flight.node.remove());
+    prepared?.victim?.remove();
+    runImpactFeedback(move, null);
     return false;
   }
+
   const origin = boardSquare(move.from);
   const destination = boardSquare(move.to);
   origin?.classList.add("move-origin-pulse");
@@ -479,60 +652,21 @@ function animateBoardMove(move, prepared) {
     boardSquare((kingSide ? "f" : "d") + rank)?.classList.add("move-destination-pulse");
   }
 
-  if (move.captured) {
-    const captureSquare = move.flags.includes("e")
-      ? move.to[0] + move.from[1] : move.to;
-    const square = boardSquare(captureSquare);
-    if (square) {
-      const captured = document.createElement("span");
-      captured.className = "piece captured-ghost " +
-        (move.color === "w" ? "black-piece" : "white-piece");
-      captured.textContent = PIECES[opposite(move.color)][move.captured];
-      captured.setAttribute("aria-hidden", "true");
-      square.append(captured);
-      captured.addEventListener("animationend", () => captured.remove(), { once: true });
-      const burst = document.createElement("span");
-      burst.className = "capture-burst";
-      burst.setAttribute("aria-hidden", "true");
-      square.append(burst);
-      burst.addEventListener("animationend", () => burst.remove(), { once: true });
-    }
+  if (!prepared?.flights.length) {
+    runImpactFeedback(move, null);
+    return false;
   }
 
-  if (game.isCheck()) {
-    boardSquare(
-      game.board().flat().find((piece) =>
-        piece && piece.color === game.turn() && piece.type === "k"
-      )?.square
-    )?.classList.add("check-arrival");
-  }
-  if (result) $("status-title").classList.add("result-arrival");
-
-  if (!prepared?.flights.length) return false;
   const duration = motionPreset === "slow" ? 1100 : 650;
   const animations = [];
   try {
     for (const flight of prepared.flights) {
-      const arrival = boardSquare(flight.to)?.querySelector(".piece");
-      arrival?.classList.add("piece-in-transit");
-      // Animate the original glyph above the actual destination square.
+      boardSquare(flight.to)?.querySelector(".piece")?.classList.add("piece-in-transit");
       const animation = flight.node.animate([
-        { offset: 0, transform: "translate3d(0px,0px,0) scale(1)", filter: "drop-shadow(0 2px 1px #0005)" },
-        {
-          offset: .25,
-          transform: "translate3d(" + (flight.dx * .2) + "px," + (flight.dy * .2) + "px,0) scale(1.17)",
-          filter: "drop-shadow(0 13px 6px #0008)"
-        },
-        {
-          offset: .75,
-          transform: "translate3d(" + (flight.dx * .82) + "px," + (flight.dy * .82) + "px,0) scale(1.10)",
-          filter: "drop-shadow(0 9px 5px #0006)"
-        },
-        {
-          offset: 1,
-          transform: "translate3d(" + flight.dx + "px," + flight.dy + "px,0) scale(1)",
-          filter: "drop-shadow(0 2px 1px #0004)"
-        }
+        { offset: 0, transform: "translate3d(0px,0px,0) scale(1)" },
+        { offset: .25, transform: "translate3d(" + (flight.dx * .2) + "px," + (flight.dy * .2) + "px,0) scale(1.17)" },
+        { offset: .75, transform: "translate3d(" + (flight.dx * .82) + "px," + (flight.dy * .82) + "px,0) scale(1.10)" },
+        { offset: 1, transform: "translate3d(" + flight.dx + "px," + flight.dy + "px,0) scale(1)" }
       ], { duration, easing: "cubic-bezier(.22,.68,.24,1)", fill: "forwards" });
       animations.push(animation);
     }
@@ -542,14 +676,20 @@ function animateBoardMove(move, prepared) {
       boardSquare(flight.to)?.querySelector(".piece")?.classList.remove("piece-in-transit");
       flight.node.remove();
     }
+    prepared.victim?.remove();
+    runImpactFeedback(move, null);
     return false;
   }
   prepared.animations = animations;
   activeMotion = prepared;
   Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
     if (activeMotion !== prepared) return;
-    // Reveal the arrived pieces in the same task that removes the overlay.
+    const victim = prepared.victim;
+    prepared.victim = null;
     cancelActiveMotion();
+    prepared.victim = victim;
+    // Impact effects start when the attacking piece actually lands.
+    runImpactFeedback(move, prepared);
     if (!result) startComputerTurn();
   });
   return true;
@@ -688,7 +828,9 @@ function playMove(from, to, promotion, source = "human") {
   selected = null;
   autoFinish();
   persist();
+  renderingMoveArrival = true;
   renderAll();
+  renderingMoveArrival = false;
   const isAnimating = animateBoardMove(legalMove, motion);
   if (!result && !isAnimating) startComputerTurn();
 }
@@ -816,10 +958,12 @@ function renderAll() {
   renderMoves();
   renderStatus();
   renderClocks();
+  if (!renderingMoveArrival) syncMateScreen();
 }
 
 function resetGame() {
   cancelActiveMotion();
+  clearImpactEffects();
   cancelComputer();
   gameMode = $("game-mode").value;
   playerColor = $("player-color").value;
@@ -857,6 +1001,7 @@ function confirmNewGame() {
 
 function undoMove() {
   cancelActiveMotion();
+  clearImpactEffects();
   const history = game.history({ verbose: true });
   if (!history.length) return;
   if (gameMode === "computer" && !history.some((move) => move.color === playerColor)) return;
@@ -925,6 +1070,7 @@ function restore() {
     if (saved.positionKeys.length !== saved.moves.length + 1 || saved.moveClocks.length !== saved.moves.length) return false;
 
     cancelActiveMotion();
+    clearImpactEffects();
     cancelComputer();
     motionPreset = ["normal", "slow", "system", "off"].includes(saved.motionPreset)
       ? saved.motionPreset : "normal";
@@ -965,6 +1111,7 @@ function restore() {
 
 $("flip-button").addEventListener("click", () => {
   cancelActiveMotion();
+  clearImpactEffects();
   flipped = !flipped;
   persist();
   renderBoard();
@@ -1000,6 +1147,7 @@ $("new-game-button").addEventListener("click", confirmNewGame);
 
 $("motion-preset").addEventListener("change", (event) => {
   cancelActiveMotion();
+  clearImpactEffects();
   motionPreset = event.target.value;
   persist();
   if (!result) startComputerTurn();
