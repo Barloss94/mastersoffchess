@@ -369,3 +369,37 @@ test("switching from practice to stronger level while a move is pending cancels 
   assert.equal(document.getElementById("total-moves").textContent, "2 zetten");
   window.close();
 });
+
+
+test("legal moves animate source and destination and captures show a disappearing piece", () => {
+  const { document, window, move } = setup();
+  assert.equal(document.querySelectorAll("#board [data-square]").length, 64);
+  move("e2", "e4");
+  assert.ok(document.querySelector('[data-square="e2"]').classList.contains("move-origin-pulse"));
+  assert.ok(document.querySelector('[data-square="e4"]').classList.contains("move-destination-pulse"));
+  move("d7", "d5");
+  move("e4", "d5");
+  assert.equal(document.querySelectorAll(".captured-ghost").length, 1);
+  assert.ok(document.querySelector('[data-square="d5"] .capture-burst'));
+  assert.equal(document.getElementById("total-moves").textContent, "3 zetten");
+  window.close();
+});
+
+test("castling animates the rook and reduced-motion disables decorative effects", () => {
+  const { document, window, move } = setup();
+  for (const [from, to] of [
+    ["e2", "e4"], ["e7", "e5"], ["g1", "f3"],
+    ["b8", "c6"], ["f1", "c4"], ["g8", "f6"], ["e1", "g1"]
+  ]) move(from, to);
+  assert.ok(document.querySelector('[data-square="h1"]').classList.contains("move-origin-pulse"));
+  assert.ok(document.querySelector('[data-square="f1"]').classList.contains("move-destination-pulse"));
+  window.close();
+
+  const reduced = setup();
+  reduced.window.matchMedia = () => ({ matches: true });
+  reduced.move("e2", "e4");
+  assert.ok(!reduced.document.querySelector(".move-origin-pulse"));
+  assert.ok(!reduced.document.querySelector(".capture-burst"));
+  assert.equal(reduced.document.getElementById("total-moves").textContent, "1 zet");
+  reduced.window.close();
+});
