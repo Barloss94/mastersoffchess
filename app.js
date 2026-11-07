@@ -15,11 +15,22 @@ const opposite = (color) => color === "w" ? "b" : "w";
 const colorName = (color) => color === "w" ? "Wit" : "Zwart";
 
 const COMPUTER_LEVELS = {
-  beginner: { skill: 0, depth: 2, time: 180 },
-  easy: { skill: 3, depth: 5, time: 300 },
-  medium: { skill: 10, depth: 10, time: 700 },
-  hard: { skill: 18, depth: 16, time: 1500 }
+  practice: { label: "Oefenen", stockfish: false },
+  beginner: { label: "Beginner", stockfish: false },
+  easy: { label: "Recreatief", stockfish: false },
+  medium: { label: "Gevorderd", stockfish: true, skill: 10, depth: 10, time: 700 },
+  hard: { label: "Expert", stockfish: true, skill: 18, depth: 16, time: 1500 }
 };
+
+const LEVEL_HELP = {
+  practice: "Extra makkelijk: de computer doet vooral willekeurige zetten en mist veel kansen.",
+  beginner: "Makkelijk: de computer kent de regels, maar speelt onregelmatig en maakt vaak fouten.",
+  easy: "Recreatief: de computer ziet simpele slagzetten, maar mist regelmatig tactiek.",
+  medium: "Gevorderd: Stockfish denkt meerdere zetten vooruit.",
+  hard: "Expert: een sterke Stockfish-tegenstander."
+};
+
+const stockfishRequired = (level) => Boolean(COMPUTER_LEVELS[level]?.stockfish);
 
 /**
  * Runs Stockfish as a same-origin classic Web Worker. The build is installed
@@ -123,6 +134,60 @@ let computer = null;
 let computerThinking = false;
 let computerToken = 0;
 let engineUnavailable = false;
+let weakMoveTimer = null;
+
+function pickRandom(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+/**
+ * Deliberately human-like, weak play for the first three difficulty levels.
+ * All candidates still come from chess.js legal move generation.
+ * Stockfish's "Skill Level 0" is far too strong for actual beginners.
+ */
+function pickFriendlyMove(level) {
+  const moves = game.moves({ verbose: true });
+  if (!moves.length) return null;
+
+  // Training: mostly quiet, unplanned moves. The opponent often ignores
+  // hanging pieces and easy captures, giving new players room to practice.
+  if (level === "practice") {
+    const quiet = moves.filter((move) => !move.captured && !move.promotion);
+    const pool = quiet.length && Math.random() < 0.90 ? quiet : moves;
+    const pawns = pool.filter((move) => move.piece === "p");
+    return pickRandom(pawns.length && Math.random() < 0.55 ? pawns : pool);
+  }
+
+  // Beginner: usually moves a random piece, occasionally notices captures.
+  // There is intentionally no search, deep evaluation or opening book.
+  if (level === "beginner") {
+    const quiet = moves.filter((move) => !move.captured && !move.promotion);
+    if (quiet.length && Math.random() < 0.65) return pickRandom(quiet);
+    const captures = moves.filter((move) => move.captured);
+    if (captures.length && Math.random() < 0.30) return pickRandom(captures);
+    return pickRandom(moves);
+  }
+
+  // Recreational: one-ply greed with substantial randomness, no deep search.
+  const values = { p: 100, n: 300, b: 330, r: 500, q: 900, k: 0 };
+  const scored = moves.map((move) => {
+    let score = move.captured ? values[move.captured] || 0 : 0;
+    if (move.promotion) score += values[move.promotion] || 0;
+    game.move(move);
+    if (game.isCheckmate()) score += 5000;
+    else if (game.isCheck()) score += 25;
+    const replies = game.moves({ verbose: true });
+    const canRecapture = replies.some((reply) => reply.to === move.to && reply.captured);
+    if (canRecapture) score -= (values[move.piece] || 0) * 0.65;
+    game.undo();
+    score += (Math.random() - 0.5) * 360;
+    return { move, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return Math.random() < 0.38
+    ? pickRandom(moves)
+    : pickRandom(scored.slice(0, Math.min(5, scored.length))).move;
+}
 
 function isComputerTurn() {
   return gameMode === "computer" && game.turn() !== playerColor && !result;
@@ -130,6 +195,8 @@ function isComputerTurn() {
 
 function cancelComputer() {
   computerToken++;
+  if (weakMoveTimer !== null) window.clearTimeout(weakMoveTimer);
+  weakMoveTimer = null;
   computerThinking = false;
   if (computer) computer.dispose();
   computer = null;
@@ -190,6 +257,17 @@ function startComputerTurn() {
       if (move) accept(move, fen);
     }, 300);
   };
+  // The easiest levels deliberately do NOT use Stockfish. This is what makes
+  // them meaningfully weaker than Stockfish at its minimum skill setting.
+  if (!stockfishRequired(computerLevel)) {
+    weakMoveTimer = window.setTimeout(() => {
+      weakMoveTimer = null;
+      if (token !== computerToken || game.fen() !== fen || !isComputerTurn()) return;
+      const move = pickFriendlyMove(computerLevel);
+      if (move) accept(move, fen);
+    }, 450);
+    return;
+  }
   if (engineUnavailable) {
     useFallback(fen);
     return;
@@ -490,7 +568,13 @@ function renderStatus() {
   $("player-color").value = playerColor;
   $("computer-level").value = computerLevel;
   $("header-pill").lastChild.textContent = gameMode === "computer"
-    ? " Tegen Stockfish · 1 speler" : " Lokale partij · 2 spelers";
+    ? " Tegen de computer · 1 speler" : " Lokale partij · 2 spelers";
+  if (gameMode === "computer") {
+    $("computer-help").textContent = engineUnavailable && stockfishRequired(computerLevel)
+      ? "Stockfish is niet beschikbaar. De eenvoudige reservecomputer speelt verder."
+      : LEVEL_HELP[computerLevel] || LEVEL_HELP.beginner;
+    $("computer-help").classList.toggle("is-error", engineUnavailable && stockfishRequired(computerLevel));
+  }
   $("board-tip").textContent = gameMode === "computer"
     ? "Kies een stuk wanneer jij aan zet bent" : "Tik eerst op een stuk en daarna op het doelveld";
   $("end-helper").textContent = gameMode === "computer"
@@ -512,9 +596,10 @@ function renderStatus() {
     description.textContent = "De partij is beëindigd. Start een nieuw spel of sla de PGN op.";
   } else if (isComputerTurn()) {
     title.textContent = computerThinking ? "Computer denkt na…" : "Computer aan zet";
-    description.textContent = engineUnavailable
-      ? "De reservecomputer zoekt een geldige zet."
-      : computerThinking ? "Stockfish berekent zijn volgende zet." : "Stockfish wordt gestart.";
+    description.textContent = stockfishRequired(computerLevel)
+      ? engineUnavailable ? "De reservecomputer zoekt een geldige zet."
+        : computerThinking ? "Stockfish berekent zijn volgende zet." : "Stockfish wordt gestart."
+      : "De computer kiest een zet zonder diep vooruit te denken.";
   } else {
     title.textContent = (gameMode === "computer"
       ? "Jij bent aan zet · " + colorName(color)
@@ -570,7 +655,7 @@ function resetGame() {
   playerColor = $("player-color").value;
   computerLevel = $("computer-level").value;
   engineUnavailable = false;
-  $("computer-help").textContent = "Je speelt tegen Stockfish. De computer reageert automatisch op je zet.";
+  $("computer-help").textContent = LEVEL_HELP[computerLevel];
   $("computer-help").classList.remove("is-error");
   if (gameMode === "computer") flipped = playerColor === "b";
   else flipped = false;
@@ -677,7 +762,7 @@ function restore() {
     $("player-color").value = playerColor;
     $("computer-level").value = computerLevel;
     engineUnavailable = false;
-    $("computer-help").textContent = "Je speelt tegen Stockfish. De computer reageert automatisch op je zet.";
+    $("computer-help").textContent = LEVEL_HELP[computerLevel];
     $("computer-help").classList.remove("is-error");
     game = loaded;
     control = saved.control;
