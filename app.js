@@ -423,6 +423,9 @@ function clearImpactEffects() {
   for (const id of effectTimeouts) window.clearTimeout(id);
   effectTimeouts.clear();
   $("impact-layer").replaceChildren();
+  // Hit victims detach from the flight when the impact begins, so they must
+  // also be removed explicitly on reset, undo and mode changes.
+  $("motion-layer").querySelectorAll(".capture-victim").forEach((node) => node.remove());
   $("mate-sparks").replaceChildren();
   $("mate-screen").hidden = true;
   document.querySelector(".board-frame")?.classList.remove("check-shake", "mate-finale");
