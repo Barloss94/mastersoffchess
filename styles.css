@@ -288,3 +288,63 @@ select:focus { border-color:#d8b778; box-shadow:0 0 0 3px #d9b6771e; }
   body::before { display:none; }
   .square .captured-ghost,.square .capture-burst { display:none; }
 }
+
+
+/* v1.3 – actual flight layer for piece movement. The moving glyph is copied
+   before chess.js changes the board; the destination stays hidden until arrival. */
+.board-frame { position:relative; isolation:isolate; }
+.motion-layer {
+  position:absolute;
+  inset:0;
+  z-index:30;
+  pointer-events:none;
+  overflow:visible;
+  contain:layout style;
+}
+.motion-layer .flying-piece-square {
+  position:absolute;
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+  z-index:31;
+  background:transparent;
+  border:0;
+  transform-origin:center;
+  will-change:transform,filter;
+  animation:none!important;
+}
+.motion-layer .flying-piece-square .piece {
+  display:block;
+  animation:none!important;
+  transition:none!important;
+  transform:none;
+}
+.square .piece.piece-in-transit {
+  visibility:hidden!important;
+  opacity:0!important;
+}
+.motion-control {
+  display:flex;
+  gap:7px;
+  align-items:center;
+  color:#d9bd8d;
+  font-size:11px;
+  margin-left:auto;
+}
+.motion-control label { white-space:nowrap; font-weight:700; }
+.motion-control select {
+  width:auto;
+  min-width:136px;
+  padding:6px 8px;
+  border-radius:6px;
+  font-size:11px;
+  background:#1b2a24;
+}
+@media (max-width:760px) {
+  .motion-control { margin-left:0; }
+  .motion-control select { min-width:116px; max-width:165px; }
+}
+@media (max-width:390px) {
+  .under-board { gap:8px; }
+  .motion-control { width:100%; justify-content:space-between; }
+}
