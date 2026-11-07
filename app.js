@@ -954,6 +954,8 @@ function renderClocks() {
 }
 
 function renderAll() {
+  document.documentElement.classList.toggle("motion-explicit",
+    motionPreset === "normal" || motionPreset === "slow");
   renderBoard();
   renderMoves();
   renderStatus();
@@ -1149,6 +1151,8 @@ $("motion-preset").addEventListener("change", (event) => {
   cancelActiveMotion();
   clearImpactEffects();
   motionPreset = event.target.value;
+  document.documentElement.classList.toggle("motion-explicit",
+    motionPreset === "normal" || motionPreset === "slow");
   persist();
   if (!result) startComputerTurn();
 });
