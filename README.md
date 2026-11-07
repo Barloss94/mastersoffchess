@@ -11,6 +11,8 @@ Een moderne schaakapp voor **twee spelers op één apparaat** of **tegen de comp
 - Zelf kiezen met wit of zwart; het bord draait automatisch mee voor zwart.
 - Bestaande lokale modus voor twee spelers blijft werken.
 - Bedenktijd: 3+2, 5+0, 10+5, 15+10, 30+0 of onbeperkt.
+- Echte vloeiende zetanimaties: stukken bewegen zichtbaar boven het bord naar hun nieuwe veld, met animaties voor slaan, schaak en rokade.
+- Instelbare zetanimaties: **Vloeiend (0,65 seconde)**, **Rustig (1,1 seconde)**, **Systeemvoorkeur** of **Uit**. De gekozen instelling wordt lokaal bewaard.
 - Zetgeschiedenis, terugnemen (tegen de computer meestal een volledige beurt), opgeven, FEN kopiëren en PGN exporteren.
 - Lokale opslag: partij en instellingen worden opgeslagen en na herladen **gepauzeerd** hersteld.
 - Bij uitval van de Stockfish-engine speelt een eenvoudige reservecomputer verder; de app vermeldt dit duidelijk.
