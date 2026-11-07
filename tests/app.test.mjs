@@ -499,3 +499,96 @@ test("animation speed setting works, is persisted, and interrupted moves clean u
   assert.equal(animations.length, 1);
   window.close();
 });
+
+
+test("captures visibly react on contact instead of at the start of piece travel", async () => {
+  const { document, window, move } = setup();
+  const animations = mockActualMotion(window);
+  const settle = async () => {
+    animations.at(-1).finish();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+  };
+  move("e2", "e4");
+  await settle();
+  move("d7", "d5");
+  await settle();
+  move("e4", "d5");
+  assert.equal(document.querySelectorAll(".capture-victim").length, 1);
+  assert.ok(!document.querySelector(".capture-victim.is-hit"));
+  assert.equal(document.querySelectorAll(".capture-shard").length, 0);
+  assert.equal(document.querySelectorAll(".capture-impact-word").length, 0);
+  assert.equal(document.getElementById("total-moves").textContent, "3 zetten");
+
+  await settle();
+  assert.equal(document.querySelectorAll(".capture-victim.is-hit").length, 1);
+  assert.equal(document.querySelectorAll(".capture-shard").length, 12);
+  assert.equal(document.querySelectorAll(".capture-shockwave").length, 1);
+  assert.equal(document.querySelector(".capture-impact-word")?.textContent, "GESLAGEN!");
+  assert.ok(document.querySelector('[data-square="d5"]').classList.contains("capture-impact-square"));
+
+  document.getElementById("new-game-button").click();
+  assert.equal(document.querySelectorAll(".capture-shard").length, 0);
+  assert.equal(document.querySelectorAll(".capture-victim").length, 0);
+  window.close();
+});
+
+test("a checking move shakes the attacked king and displays SCHAAK", () => {
+  const { document, window, move } = setup();
+  move("e2", "e4");
+  move("f7", "f6");
+  move("d1", "h5");
+  assert.ok(document.getElementById("status-title").textContent.includes("schaak!"));
+  assert.equal(document.querySelector(".check-announcement")?.textContent, "SCHAAK!");
+  assert.ok(document.querySelector('[data-square="e8"] .piece')?.classList.contains("king-struck"));
+  assert.equal(document.querySelectorAll(".check-shockwave").length, 1);
+  assert.ok(document.querySelector(".board-frame").classList.contains("check-shake"));
+  assert.equal(document.getElementById("mate-screen").hidden, true);
+  window.close();
+});
+
+test("checkmate celebration happens only after the final piece has landed", async () => {
+  const { document, window, move } = setup();
+  const animations = mockActualMotion(window);
+  const play = async (from, to) => {
+    const count = animations.length;
+    move(from, to);
+    assert.equal(animations.length, count + 1);
+    animations.at(-1).finish();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+  };
+  for (const [from, to] of [
+    ["e2","e4"],["e7","e5"],["d1","h5"],
+    ["b8","c6"],["f1","c4"],["g8","f6"]
+  ]) await play(from, to);
+
+  move("h5","f7");
+  assert.match(document.getElementById("status-title").textContent, /Wit wint door schaakmat/);
+  assert.equal(document.getElementById("mate-screen").hidden, true);
+  animations.at(-1).finish();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(document.getElementById("mate-screen").hidden, false);
+  assert.equal(document.getElementById("mate-winner").textContent, "Wit wint de partij");
+  assert.equal(document.querySelectorAll(".mate-spark").length, 28);
+  assert.equal(document.querySelector(".check-announcement")?.textContent, "SCHAAKMAT!");
+  assert.ok(document.querySelector('[data-square="e8"] .piece')?.classList.contains("king-struck"));
+
+  document.getElementById("undo-button").click();
+  assert.equal(document.getElementById("mate-screen").hidden, true);
+  assert.equal(document.querySelectorAll(".mate-spark").length, 0);
+  window.close();
+});
+
+test("mate overlay remains understandable with animations disabled", () => {
+  const { document, window, move } = setup();
+  const preset = document.getElementById("motion-preset");
+  preset.value = "off";
+  preset.dispatchEvent(new window.Event("change"));
+  for (const [from,to] of [
+    ["e2","e4"],["e7","e5"],["d1","h5"],["b8","c6"],
+    ["f1","c4"],["g8","f6"],["h5","f7"]
+  ]) move(from,to);
+  assert.equal(document.getElementById("mate-screen").hidden, false);
+  assert.equal(document.querySelectorAll(".mate-spark").length, 0);
+  assert.equal(document.querySelectorAll(".capture-shard").length, 0);
+  window.close();
+});
