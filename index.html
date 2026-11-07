@@ -19,16 +19,16 @@
           <h1>MASTERS <span>OF CHESS</span></h1>
         </div>
       </div>
-      <div class="header-pill"><span class="live-dot"></span> Lokale partij · 2 spelers</div>
+      <div class="header-pill" id="header-pill"><span class="live-dot"></span> Lokale partij · 2 spelers</div>
     </header>
 
     <div class="intro">
       <div>
         <span class="eyebrow">SCHAAKARENA</span>
         <h2>Elke zet telt.</h2>
-        <p>Speel samen op één apparaat. Met een officiële schaakengine, bedenktijd en complete zetgeschiedenis.</p>
+        <p>Speel tegen de computer of samen op één apparaat. Met officiële schaakregels, bedenktijd en complete zetgeschiedenis.</p>
       </div>
-      <span class="edition">VERSIE 1.0 <span>•</span> LOCAL PLAY</span>
+      <span class="edition">VERSIE 1.1 <span>•</span> PLAY & LEARN</span>
     </div>
 
     <main class="layout">
@@ -56,7 +56,7 @@
         <div class="under-board">
           <button class="text-button" id="flip-button" type="button"><span aria-hidden="true">⇅</span> Bord draaien</button>
           <button class="text-button" id="fen-button" type="button"><span aria-hidden="true">⧉</span> FEN kopiëren</button>
-          <span class="notation-tip">Tik eerst op een stuk en daarna op het doelveld</span>
+          <span class="notation-tip" id="board-tip">Tik eerst op een stuk en daarna op het doelveld</span>
         </div>
       </section>
 
@@ -71,7 +71,33 @@
 
         <section class="panel settings-panel">
           <div class="panel-heading"><span class="eyebrow">SPELINSTELLINGEN</span></div>
-          <label class="select-label" for="time-control">Bedenktijd</label>
+          <label class="select-label" for="game-mode">Speelmodus</label>
+          <select id="game-mode">
+            <option value="local">Twee spelers op één apparaat</option>
+            <option value="computer">Tegen de computer</option>
+          </select>
+          <div id="computer-settings" hidden>
+            <div class="computer-controls">
+              <div>
+                <label class="select-label" for="player-color">Jouw kleur</label>
+                <select id="player-color">
+                  <option value="w">Wit (begint)</option>
+                  <option value="b">Zwart</option>
+                </select>
+              </div>
+              <div>
+                <label class="select-label" for="computer-level">Moeilijkheid</label>
+                <select id="computer-level">
+                  <option value="beginner">Beginner</option>
+                  <option value="easy">Recreatief</option>
+                  <option value="medium" selected>Gevorderd</option>
+                  <option value="hard">Expert</option>
+                </select>
+              </div>
+            </div>
+            <p class="helper" id="computer-help">Je speelt tegen Stockfish. De computer reageert automatisch op je zet.</p>
+          </div>
+          <label class="select-label time-label" for="time-control">Bedenktijd</label>
           <select id="time-control">
             <option value="3+2">Blitz · 3 min + 2 sec</option>
             <option value="5+0">Blitz · 5 minuten</option>
@@ -103,7 +129,7 @@
             <button id="draw-button" class="tertiary-button" type="button">½ Remise</button>
             <button id="resign-button" class="tertiary-button danger" type="button">⚑ Opgeven</button>
           </div>
-          <p class="helper">Deze versie werkt op één apparaat. Online partijen volgen later.</p>
+          <p class="helper" id="end-helper">Lokaal spelen of tegen Stockfish. Online partijen volgen later.</p>
         </section>
       </aside>
     </main>
