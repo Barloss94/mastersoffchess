@@ -23,12 +23,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install and prepare Stockfish engine
+        run: npm install --omit=dev --no-audit --no-fund
+      - name: Prepare the static website
+        run: |
+          mkdir -p site/engine
+          cp index.html app.js styles.css site/
+          cp engine/stockfish-19-lite-single.js engine/stockfish-19-lite-single.wasm site/engine/
+          touch site/.nojekyll
+          test -s site/engine/stockfish-19-lite-single.js
+          test -s site/engine/stockfish-19-lite-single.wasm
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload static website
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
