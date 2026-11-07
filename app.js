@@ -127,6 +127,8 @@ let result = null;
 let moveClocks = [];
 let positionKeys = [];
 let toastTimer = 0;
+let motionPreset = $("motion-preset").value;
+let activeMotion = null;
 let gameMode = $("game-mode").value;
 let playerColor = $("player-color").value;
 let computerLevel = $("computer-level").value;
@@ -232,7 +234,7 @@ function fallbackMove() {
 }
 
 function startComputerTurn() {
-  if (!isComputerTurn() || computerThinking) return;
+  if (!isComputerTurn() || computerThinking || activeMotion) return;
   computerThinking = true;
   const token = ++computerToken;
   const fen = game.fen();
@@ -392,61 +394,84 @@ function getSquares() {
   return squares;
 }
 
-// The game state remains authoritative: motion is only a visual transition
-// between two already-validated chess.js positions.
+// A dedicated overlay keeps the original piece visible for its entire move.
+// The destination is revealed only after its flight actually finishes.
 function motionAllowed() {
-  return !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  if (motionPreset === "off") return false;
+  if (motionPreset === "system") {
+    return !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+  return true;
 }
 
 function boardSquare(square) {
-  return Array.from($("board").children).find((node) => node.dataset.square === square);
+  return [...$("board").children].find((node) => node.dataset.square === square);
 }
 
-function animatePieceTravel(from, to) {
-  if (!motionAllowed()) return;
-  const origin = boardSquare(from);
-  const destination = boardSquare(to);
-  const symbol = destination?.querySelector(".piece");
-  if (!origin || !destination || !symbol) return;
-
-  origin.classList.add("move-origin-pulse");
-  destination.classList.add("move-destination-pulse");
-
-  const start = origin.getBoundingClientRect();
-  const finish = destination.getBoundingClientRect();
-  if (!start.width || !finish.width) return;
-  const deltaX = start.left - finish.left;
-  const deltaY = start.top - finish.top;
-  destination.classList.add("square-animating");
-  symbol.classList.add("piece-traveling");
-  symbol.style.transition = "none";
-  symbol.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0) scale(1.08)`;
-  symbol.style.filter = "drop-shadow(0 9px 5px rgba(0, 0, 0, .36))";
-  // Commit the initial position before animating to its actual square.
-  void symbol.offsetWidth;
-  const frame = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
-  frame(() => {
-    if (!symbol.isConnected) return;
-    symbol.style.transition = "transform 335ms cubic-bezier(.19,.8,.22,1), filter 335ms ease";
-    symbol.style.transform = "translate3d(0,0,0) scale(1)";
-    symbol.style.filter = "";
-    const cleanup = (event) => {
-      if (event.propertyName !== "transform") return;
-      symbol.removeEventListener("transitionend", cleanup);
-      symbol.classList.remove("piece-traveling");
-      symbol.style.transition = "";
-      symbol.style.transform = "";
-      symbol.style.filter = "";
-      destination.classList.remove("square-animating");
-    };
-    symbol.addEventListener("transitionend", cleanup);
-  });
+function cancelActiveMotion() {
+  const current = activeMotion;
+  activeMotion = null;
+  if (!current) return;
+  for (const animation of current.animations) animation.cancel();
+  for (const flight of current.flights) {
+    boardSquare(flight.to)?.querySelector(".piece")?.classList.remove("piece-in-transit");
+    flight.node.remove();
+  }
 }
 
-function animateBoardMove(move) {
-  if (!motionAllowed()) return;
-  const source = move.from;
-  const destination = move.to;
+function prepareMoveMotion(move) {
+  if (!motionAllowed() || typeof Element.prototype.animate !== "function") return null;
+  const layer = $("motion-layer");
+  if (!layer) return null;
+  const layerBounds = layer.getBoundingClientRect();
+  if (!layerBounds.width) return null;
+
+  const flights = [];
+  const appendFlight = (from, to) => {
+    const source = boardSquare(from);
+    const destination = boardSquare(to);
+    const piece = source?.querySelector(".piece");
+    if (!source || !destination || !piece) return false;
+    const origin = source.getBoundingClientRect();
+    const target = destination.getBoundingClientRect();
+    if (!origin.width || !target.width) return false;
+
+    const flyingSquare = document.createElement("div");
+    flyingSquare.className = "square flying-piece-square";
+    flyingSquare.setAttribute("aria-hidden", "true");
+    flyingSquare.style.left = (origin.left - layerBounds.left) + "px";
+    flyingSquare.style.top = (origin.top - layerBounds.top) + "px";
+    flyingSquare.style.width = origin.width + "px";
+    flyingSquare.style.height = origin.height + "px";
+    flyingSquare.append(piece.cloneNode(true));
+    layer.append(flyingSquare);
+    flights.push({
+      node: flyingSquare,
+      to,
+      dx: target.left - origin.left,
+      dy: target.top - origin.top
+    });
+    return true;
+  };
+
+  if (!appendFlight(move.from, move.to)) return null;
+  if (move.flags.includes("k") || move.flags.includes("q")) {
+    const rank = move.color === "w" ? "1" : "8";
+    const kingSide = move.flags.includes("k");
+    appendFlight((kingSide ? "h" : "a") + rank, (kingSide ? "f" : "d") + rank);
+  }
+  return { flights, animations: [] };
+}
+
+function animateBoardMove(move, prepared) {
+  if (!motionAllowed()) {
+    if (prepared) prepared.flights.forEach(({node}) => node.remove());
+    return false;
+  }
+  const origin = boardSquare(move.from);
+  const destination = boardSquare(move.to);
+  origin?.classList.add("move-origin-pulse");
+  destination?.classList.add("move-destination-pulse");
 
   if (move.captured) {
     const captureSquare = move.flags.includes("e")
@@ -468,13 +493,6 @@ function animateBoardMove(move) {
     }
   }
 
-  animatePieceTravel(source, destination);
-  // Castling moves two pieces; the rook follows its own trajectory.
-  if (move.flags.includes("k") || move.flags.includes("q")) {
-    const rank = move.color === "w" ? "1" : "8";
-    const kingSide = move.flags.includes("k");
-    animatePieceTravel((kingSide ? "h" : "a") + rank, (kingSide ? "f" : "d") + rank);
-  }
   if (game.isCheck()) {
     boardSquare(
       game.board().flat().find((piece) =>
@@ -483,6 +501,52 @@ function animateBoardMove(move) {
     )?.classList.add("check-arrival");
   }
   if (result) $("status-title").classList.add("result-arrival");
+
+  if (!prepared?.flights.length) return false;
+  const duration = motionPreset === "slow" ? 1100 : 650;
+  const animations = [];
+  try {
+    for (const flight of prepared.flights) {
+      const arrival = boardSquare(flight.to)?.querySelector(".piece");
+      arrival?.classList.add("piece-in-transit");
+      // Animate the original glyph above the actual destination square.
+      const animation = flight.node.animate([
+        { offset: 0, transform: "translate3d(0px,0px,0) scale(1)", filter: "drop-shadow(0 2px 1px #0005)" },
+        {
+          offset: .25,
+          transform: "translate3d(" + (flight.dx * .2) + "px," + (flight.dy * .2) + "px,0) scale(1.17)",
+          filter: "drop-shadow(0 13px 6px #0008)"
+        },
+        {
+          offset: .75,
+          transform: "translate3d(" + (flight.dx * .82) + "px," + (flight.dy * .82) + "px,0) scale(1.10)",
+          filter: "drop-shadow(0 9px 5px #0006)"
+        },
+        {
+          offset: 1,
+          transform: "translate3d(" + flight.dx + "px," + flight.dy + "px,0) scale(1)",
+          filter: "drop-shadow(0 2px 1px #0004)"
+        }
+      ], { duration, easing: "cubic-bezier(.22,.68,.24,1)", fill: "forwards" });
+      animations.push(animation);
+    }
+  } catch {
+    for (const animation of animations) animation.cancel();
+    for (const flight of prepared.flights) {
+      boardSquare(flight.to)?.querySelector(".piece")?.classList.remove("piece-in-transit");
+      flight.node.remove();
+    }
+    return false;
+  }
+  prepared.animations = animations;
+  activeMotion = prepared;
+  Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+    if (activeMotion !== prepared) return;
+    // Reveal the arrived pieces in the same task that removes the overlay.
+    cancelActiveMotion();
+    if (!result) startComputerTurn();
+  });
+  return true;
 }
 
 function renderBoard() {
@@ -540,7 +604,7 @@ function renderBoard() {
 }
 
 function chooseSquare(square) {
-  if (result || pendingPromotion || isComputerTurn()) return;
+  if (result || pendingPromotion || activeMotion || isComputerTurn()) return;
   const piece = game.get(square);
 
   if (selected === square) {
@@ -590,7 +654,7 @@ function openPromotion(from, to) {
 }
 
 function playMove(from, to, promotion, source = "human") {
-  if (result) return;
+  if (result || activeMotion) return;
   if (gameMode === "computer" && ((source === "computer") !== (game.turn() !== playerColor))) return;
   const legalMove = game.moves({ square: from, verbose: true }).find(
     (move) => move.to === to && (move.promotion || undefined) === promotion
@@ -602,6 +666,7 @@ function playMove(from, to, promotion, source = "human") {
 
   chargeClock();
   if (result) return;
+  const motion = prepareMoveMotion(legalMove);
   const player = game.turn();
   moveClocks.push({ w: remaining.w, b: remaining.b, hasStarted });
   game.move({ from, to, ...(promotion ? { promotion } : {}) });
@@ -618,8 +683,8 @@ function playMove(from, to, promotion, source = "human") {
   autoFinish();
   persist();
   renderAll();
-  animateBoardMove(legalMove);
-  if (!result) startComputerTurn();
+  const isAnimating = animateBoardMove(legalMove, motion);
+  if (!result && !isAnimating) startComputerTurn();
 }
 
 function renderMoves() {
@@ -748,6 +813,7 @@ function renderAll() {
 }
 
 function resetGame() {
+  cancelActiveMotion();
   cancelComputer();
   gameMode = $("game-mode").value;
   playerColor = $("player-color").value;
@@ -784,6 +850,7 @@ function confirmNewGame() {
 }
 
 function undoMove() {
+  cancelActiveMotion();
   const history = game.history({ verbose: true });
   if (!history.length) return;
   if (gameMode === "computer" && !history.some((move) => move.color === playerColor)) return;
@@ -833,7 +900,7 @@ function persist() {
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       moves, control, remaining, hasStarted, moveClocks, positionKeys, result, flipped,
-      gameMode, playerColor, computerLevel
+      gameMode, playerColor, computerLevel, motionPreset
     }));
   } catch {
     // The game remains playable if browser storage is unavailable.
@@ -851,7 +918,11 @@ function restore() {
     for (const move of saved.moves) loaded.move(move);
     if (saved.positionKeys.length !== saved.moves.length + 1 || saved.moveClocks.length !== saved.moves.length) return false;
 
+    cancelActiveMotion();
     cancelComputer();
+    motionPreset = ["normal", "slow", "system", "off"].includes(saved.motionPreset)
+      ? saved.motionPreset : "normal";
+    $("motion-preset").value = motionPreset;
     gameMode = saved.gameMode === "computer" ? "computer" : "local";
     playerColor = saved.playerColor === "b" ? "b" : "w";
     computerLevel = Object.hasOwn(COMPUTER_LEVELS, saved.computerLevel)
@@ -887,6 +958,7 @@ function restore() {
 }
 
 $("flip-button").addEventListener("click", () => {
+  cancelActiveMotion();
   flipped = !flipped;
   persist();
   renderBoard();
@@ -918,6 +990,13 @@ $("clock-button").addEventListener("click", () => {
 });
 
 $("new-game-button").addEventListener("click", confirmNewGame);
+
+$("motion-preset").addEventListener("change", (event) => {
+  cancelActiveMotion();
+  motionPreset = event.target.value;
+  persist();
+  if (!result) startComputerTurn();
+});
 
 function changedGameSettings(select, previous) {
   if (game.history().length &&
