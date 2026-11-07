@@ -1,0 +1,14 @@
+{
+  "name": "masters-of-chess",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local two-player chess app with clock and official chess rules.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs && node --check app.js"
+  },
+  "devDependencies": {
+    "chess.js": "1.4.0",
+    "jsdom": "26.1.0"
+  }
+}
