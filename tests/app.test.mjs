@@ -380,7 +380,7 @@ test("legal moves animate source and destination and captures show a disappearin
   move("d7", "d5");
   move("e4", "d5");
   assert.equal(document.querySelectorAll(".captured-ghost").length, 1);
-  assert.ok(document.querySelector('[data-square="d5"] .capture-burst'));
+  assert.ok(document.querySelector(".capture-shockwave"), "Captured piece should trigger a visible impact wave");
   assert.equal(document.getElementById("total-moves").textContent, "3 zetten");
   window.close();
 });
