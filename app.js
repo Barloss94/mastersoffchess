@@ -511,8 +511,9 @@ function renderStatus() {
       ? "De reservecomputer zoekt een geldige zet."
       : computerThinking ? "Stockfish berekent zijn volgende zet." : "Stockfish wordt gestart.";
   } else {
-    title.textContent = (gameMode === "computer" ? "Jij bent aan zet · " : "") +
-      colorName(color) + (game.isCheck() ? " · schaak!" : "");
+    title.textContent = (gameMode === "computer"
+      ? "Jij bent aan zet · " + colorName(color)
+      : colorName(color) + " aan zet") + (game.isCheck() ? " · schaak!" : "");
     description.textContent = game.isCheck()
       ? "Je koning staat schaak. Speel een geldige verdedigende zet."
       : (running ? "De schaakklok loopt." : "Selecteer een stuk en een doelveld.");
