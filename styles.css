@@ -116,3 +116,14 @@ select { background:#0f1d1b; border:1px solid #455c4f; color:#f1eee1; border-rad
 @media (max-width:760px) { .page { padding:0 14px; } .site-header { padding:19px 0; } .brand-mark { width:47px;height:47px;font-size:35px; } .brand h1 { font-size:16px; } .brand .eyebrow { font-size:8px; letter-spacing:1.6px; } .header-pill { font-size:0;padding:11px; } .live-dot { margin:0; } .intro { padding:22px 0; } .intro h2 { font-size:36px; } .intro p { font-size:12px; } .edition { display:none; } .layout { grid-template-columns:1fr; gap:19px; } .board-frame { padding:5px; } .square .piece { font-size:clamp(32px,10vw,69px); } .player-card { min-height:67px; } .clock { min-width:111px;padding:9px; font-size:23px; } .panel { padding:19px; } .under-board { justify-content:space-between; } .site-footer { flex-direction:column; gap:7px; } }
 @media (max-width:380px) { .square .piece { font-size:33px; } .avatar { width:36px;height:36px;font-size:26px; } .clock { min-width:101px;font-size:20px; } .player-name { font-size:13px; } .player-subtitle { font-size:10px; } .board-frame { padding:3px; } .coord { font-size:8px; } .under-board { gap:10px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { transition:none !important; } }
+/* Computer opponent controls */
+#computer-settings { margin-top:16px; padding:14px; border-radius:9px; background:#13221f; border:1px solid #3d5647; }
+.computer-controls { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.computer-controls .select-label { font-size:11px; margin-bottom:6px; }
+.computer-controls select { font-size:12px; padding:10px 8px; }
+.settings-panel .time-label { margin-top:16px; }
+#computer-help { color:#d5bd8c; }
+#computer-help.is-error { color:#efa69c; }
+#black-player.is-computer .black-avatar,
+#white-player.is-computer .white-avatar { outline:2px solid #d8b477; outline-offset:2px; }
+@media (max-width:380px) { .computer-controls { grid-template-columns:1fr; } }
